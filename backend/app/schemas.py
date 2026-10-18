@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -45,6 +45,8 @@ class SignupIn(BaseModel):
     password: Annotated[str, StringConstraints(min_length=8, max_length=72)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
     phone: Phone
+    # /api/auth/phone/verify 에서 받은 일회용 토큰(이 번호의 소유 확인)
+    phone_token: str = ""
     # 결과지 피검자 본인 확인·연령대별 상담에 필요해 필수
     birth_date: date
     # 건강정보(민감정보) 수집·이용 동의는 필수
@@ -63,6 +65,15 @@ class SignupIn(BaseModel):
         if not (any(c.isalpha() for c in v) and any(c.isdigit() for c in v)):
             raise ValueError("비밀번호는 영문과 숫자를 모두 포함해야 합니다.")
         return v
+
+
+class PhoneSendIn(BaseModel):
+    phone: Phone
+
+
+class PhoneVerifyIn(BaseModel):
+    phone: Phone
+    code: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{6}$")]
 
 
 class DemoSessionIn(BaseModel):
@@ -206,11 +217,16 @@ class SlotPatchIn(BaseModel):
 
 # ---------------------------------------------------------------- bookings
 
+# 상담 전화를 받을 사람. 번호를 직접 받지 않고 '인증된 번호 중 누구의 것'인지만 고른다.
+# (자유 입력이면 모르는 사람에게 상담사가 건강 결과를 설명하는 사고가 날 수 있음)
+Contact = Literal["OWNER", "SUBJECT"]
+
+
 class BookingIn(BaseModel):
     slot_id: int
     subject_id: int
     result_id: int
-    contact_phone: Phone
+    contact: Contact = "OWNER"
     pre_questions: Annotated[str, StringConstraints(max_length=1000)] = ""
     concern_tags: list[str] = []
 
@@ -291,7 +307,7 @@ class WaitlistIn(BaseModel):
     start_hour: Annotated[int, Field(ge=0, le=23)]
     end_hour: Annotated[int, Field(ge=1, le=24)]
     counselor_id: int | None = None
-    contact_phone: Phone
+    contact: Contact = "OWNER"
     pre_questions: Annotated[str, StringConstraints(max_length=1000)] = ""
 
 

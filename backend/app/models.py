@@ -127,7 +127,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(120), unique=True)
     password_hash: Mapped[str] = mapped_column(String(200))
     name: Mapped[str] = mapped_column(String(50))
-    phone: Mapped[str] = mapped_column(String(20))
+    # 휴대폰 1개 = 계정 1개. 가입 시 인증번호로 실제 소유를 확인한다.
+    phone: Mapped[str] = mapped_column(String(20), unique=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[Role] = mapped_column(_enum(Role))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
@@ -188,6 +190,8 @@ class TestResult(Base):
     # (비어 있으면 미등록 키트 → 처음 연결하는 피검자 정보로 등록)
     registered_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     registered_birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 이름·생년월일은 주변 사람이 쉽게 알 수 있어, 검사자 휴대폰까지 대조해야 본인 결과로 인정한다
+    registered_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     subject: Mapped[Subject | None] = relationship(back_populates="results")
     indicators: Mapped[list["Indicator"]] = relationship(
@@ -210,6 +214,22 @@ class Indicator(Base):
     description: Mapped[str] = mapped_column(Text, default="")
 
     result: Mapped[TestResult] = relationship(back_populates="indicators")
+
+
+class PhoneVerification(Base):
+    """가입 전 휴대폰 소유 확인. 확인되면 일회용 토큰을 발급하고, 가입 요청은 이 토큰으로만 그 번호를 쓸 수 있다."""
+
+    __tablename__ = "phone_verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(20), index=True)  # 숫자만
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
 class Slot(Base):

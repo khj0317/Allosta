@@ -100,6 +100,15 @@ def load_subject_and_result(db: Session, customer: User, subject_id: int, result
     return subject, result
 
 
+def resolve_contact_phone(customer: User, subject: Subject, contact: str) -> str:
+    """상담 전화를 받을 번호: 계정 주인(가입 시 인증) 또는 인증을 마친 가족 본인 번호만 허용."""
+    if contact == "SUBJECT":
+        if subject.relation == Relation.SELF or not subject.phone or subject.consent_at is None:
+            raise AppError(400, "CONTACT_NOT_ALLOWED", "인증된 가족 번호로만 상담 전화를 받을 수 있습니다.")
+        return subject.phone
+    return customer.phone
+
+
 def _ensure_no_conflict(db: Session, customer: User, slot: Slot, result: TestResult, exclude_booking_id: int | None):
     base = select(Booking).join(Slot, Slot.id == Booking.slot_id).where(
         Booking.customer_id == customer.id, Booking.status == BookingStatus.CONFIRMED
@@ -138,14 +147,17 @@ def create_booking(
     slot_id: int,
     subject_id: int,
     result_id: int,
-    contact_phone: str,
+    contact: str = "OWNER",
+    contact_phone: str | None = None,
     pre_questions: str = "",
     concern_tags: list[str] | None = None,
     waitlist_entry: WaitlistEntry | None = None,
     exclude_booking_id: int | None = None,
     commit: bool = True,
 ) -> Booking:
+    """contact_phone은 내부 호출(일정 변경·대기 수락)에서 이미 검증된 번호를 이어받을 때만 쓴다."""
     subject, result = load_subject_and_result(db, customer, subject_id, result_id)
+    contact_phone = contact_phone or resolve_contact_phone(customer, subject, contact)
     slot = db.get(Slot, slot_id)
     if slot is None:
         raise not_found("슬롯")

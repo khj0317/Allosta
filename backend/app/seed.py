@@ -113,8 +113,16 @@ FIRST = ["가온", "나래", "다솜", "라온", "마루", "바다", "아라", "
          "슬기", "여름", "초롱", "하람", "미르", "윤슬", "온새", "해솔", "가람", "별하", "솔찬", "아름"]
 
 
+_used_phones: set[str] = set()
+
+
 def _phone() -> str:
-    return f"010-{rnd.randint(2000, 9999)}-{rnd.randint(1000, 9999)}"
+    """겹치지 않는 가상 번호(휴대폰 1개 = 계정 1개 규칙)"""
+    while True:
+        p = f"010-{rnd.randint(2000, 9999)}-{rnd.randint(1000, 9999)}"
+        if p not in _used_phones:
+            _used_phones.add(p)
+            return p
 
 
 def _make_result(db: Session, kit_code: str, service: ServiceType, subject: Subject | None, reported: datetime,
@@ -122,7 +130,8 @@ def _make_result(db: Session, kit_code: str, service: ServiceType, subject: Subj
     # 검체 접수 때 등록된 검사자 정보(피검자가 있으면 그 사람으로 등록)
     r = TestResult(kit_code=kit_code, subject=subject, service_type=service, reported_at=reported,
                    overall_comment=COMMENTS[service], registered_name=subject.name if subject else None,
-                   registered_birth_date=subject.birth_date if subject else None)
+                   registered_birth_date=subject.birth_date if subject else None,
+                   registered_phone=subject.phone if subject else None)
     for cat, name, unit, lo, hi, desc in INDICATORS[service]:
         roll = rnd.random()
         if lo is None:  # 상한만 있는 지표(과민 반응·중금속)
@@ -146,7 +155,10 @@ def _make_result(db: Session, kit_code: str, service: ServiceType, subject: Subj
 
 
 def _user(db: Session, email: str, name: str, role: Role, phone: str | None = None) -> User:
-    u = User(email=email, name=name, role=role, phone=phone or _phone(), password_hash=hash_password(PASSWORD))
+    if phone:
+        _used_phones.add(phone)
+    u = User(email=email, name=name, role=role, phone=phone or _phone(), password_hash=hash_password(PASSWORD),
+             phone_verified_at=now())
     db.add(u)
     return u
 
@@ -179,7 +191,8 @@ def seed(db: Session) -> None:
     # ---- 데모 고객(가상 인물 홍길동): 본인 결과 2종 + 어머니(휴대폰 인증 완료) + 아버지(인증 전, 키트 미연결)
     demo = _user(db, "customer@allostar.kr", "홍길동", Role.CUSTOMER, "010-1234-5678")
     db.flush()
-    me = Subject(owner_id=demo.id, name="홍길동", birth_date=date(1990, 3, 1), relation=Relation.SELF, consent_at=t)
+    me = Subject(owner_id=demo.id, name="홍길동", birth_date=date(1990, 3, 1), relation=Relation.SELF,
+                 phone=demo.phone, consent_at=t)
     mom = Subject(owner_id=demo.id, name="성춘향", birth_date=date(1962, 9, 3), relation=Relation.PARENT,
                   phone="010-2345-6789", consent_at=t)
     dad = Subject(owner_id=demo.id, name="홍판서", birth_date=date(1960, 1, 22), relation=Relation.PARENT,
@@ -190,7 +203,7 @@ def seed(db: Session) -> None:
     _make_result(db, "AL-NM-2026-0003", ServiceType.NUTRIENT_METAL, mom, t - timedelta(days=4), 0.45)
     # 아버지 키트: 검체 접수 때 아버지 정보로 등록됐지만 계정에는 아직 연결 전 → 인증 후 '키트 연결' 시연용
     dad_kit = _make_result(db, "AL-DEMO-00", ServiceType.METABOLIC, None, t - timedelta(days=2), 0.45)
-    dad_kit.registered_name, dad_kit.registered_birth_date = dad.name, dad.birth_date
+    dad_kit.registered_name, dad_kit.registered_birth_date, dad_kit.registered_phone = dad.name, dad.birth_date, dad.phone
 
     # ---- 회원가입 후 바로 연결해 볼 수 있는 데모 키트(미연결). /api/demo/kits 로 안내된다.
     for i, service in enumerate([ServiceType.METABOLIC, ServiceType.FOOD_SENSITIVITY, ServiceType.NUTRIENT_METAL] * 4, 1):
@@ -203,7 +216,7 @@ def seed(db: Session) -> None:
         name = rnd.choice(LAST) + rnd.choice(FIRST)
         u = _user(db, f"user{i + 1:02d}@example.com", name, Role.CUSTOMER)
         db.flush()
-        s = Subject(owner_id=u.id, name=name, relation=Relation.SELF, consent_at=t,
+        s = Subject(owner_id=u.id, name=name, relation=Relation.SELF, consent_at=t, phone=u.phone,
                     birth_date=date(rnd.randint(1955, 2000), rnd.randint(1, 12), rnd.randint(1, 28)))
         db.add(s)
         results = []

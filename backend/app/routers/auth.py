@@ -3,8 +3,10 @@ from fastapi import APIRouter
 from ..db import now
 from ..errors import AppError
 from ..models import Relation, Role, Subject, User
-from ..schemas import LoginIn, SignupIn, TokenOut, UserOut
+from ..config import settings
+from ..schemas import LoginIn, PhoneSendIn, PhoneVerifyIn, SignupIn, TokenOut, UserOut
 from ..security import CurrentUser, DbSession, create_token, hash_password, verify_password
+from ..services import phone as phone_svc
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -23,6 +25,18 @@ def login(body: LoginIn, db: DbSession):
     return TokenOut(access_token=create_token(user), user=to_user_out(user))
 
 
+@router.post("/phone/send")
+def send_phone_code(body: PhoneSendIn, db: DbSession):
+    """가입용 휴대폰 인증번호 발송. 이미 가입된 번호면 거부(휴대폰 1개 = 계정 1개)."""
+    code = phone_svc.send(db, body.phone)
+    return {"sent": True, "demo_code": code if settings.demo_mode else None}
+
+
+@router.post("/phone/verify")
+def verify_phone_code(body: PhoneVerifyIn, db: DbSession):
+    return {"phone_token": phone_svc.verify(db, body.phone, body.code)}
+
+
 @router.post("/signup", response_model=TokenOut, status_code=201)
 def signup(body: SignupIn, db: DbSession):
     """고객 회원가입. 상담사·관리자 계정은 가입이 아니라 운영자가 발급한다(권한 상승 방지).
@@ -33,16 +47,27 @@ def signup(body: SignupIn, db: DbSession):
         raise AppError(400, "CONSENT_REQUIRED", "건강정보 수집·이용에 동의해야 가입할 수 있습니다.")
     if db.query(User).filter_by(email=body.email).count():
         raise AppError(409, "EMAIL_TAKEN", "이미 가입된 이메일입니다.")
+    if phone_svc.phone_taken(db, body.phone):
+        raise AppError(409, "PHONE_TAKEN", "이미 가입된 휴대폰 번호입니다.")
+    # 이름·생년월일은 누구나 입력할 수 있으므로, 휴대폰 소유 확인이 끝난 번호로만 가입시킨다
+    phone_svc.consume_token(db, body.phone, body.phone_token)
+    phone = phone_svc.normalize(body.phone)
     user = User(
         email=body.email,
         password_hash=hash_password(body.password),
         name=body.name,
-        phone=body.phone,
+        phone=phone,
+        phone_verified_at=now(),
         role=Role.CUSTOMER,
     )
     db.add(user)
     db.flush()
-    db.add(Subject(owner_id=user.id, name=body.name, birth_date=body.birth_date, relation=Relation.SELF, consent_at=now()))
+    db.add(
+        Subject(
+            owner_id=user.id, name=body.name, birth_date=body.birth_date, relation=Relation.SELF,
+            phone=phone, consent_at=now(),
+        )
+    )
     db.commit()
     return TokenOut(access_token=create_token(user), user=to_user_out(user))
 

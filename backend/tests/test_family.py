@@ -60,8 +60,8 @@ def test_expired_code_is_rejected(client, f, db):
 
 
 def test_family_phone_must_be_their_own(client, f):
-    u = f.user()  # 계정 번호 010-1111-2222
-    assert _add(client, u, phone="01011112222").json()["detail"]["code"] == "OWN_PHONE"
+    u = f.user()
+    assert _add(client, u, phone=u.phone.replace("-", "")).json()["detail"]["code"] == "OWN_PHONE"
     assert _add(client, u).status_code == 201
     assert _add(client, u, name="홍판서", birth_date="1960-01-22").json()["detail"]["code"] == "PHONE_IN_USE"
 

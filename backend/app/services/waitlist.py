@@ -40,10 +40,11 @@ def join(
     start_hour: int,
     end_hour: int,
     counselor_id: int | None,
-    contact_phone: str,
+    contact: str = "OWNER",
     pre_questions: str = "",
 ) -> WaitlistEntry:
-    _, result = booking_service.load_subject_and_result(db, customer, subject_id, result_id)
+    subject, result = booking_service.load_subject_and_result(db, customer, subject_id, result_id)
+    contact_phone = booking_service.resolve_contact_phone(customer, subject, contact)
     if desired_date < now().date():
         raise AppError(400, "INVALID_DATE", "지난 날짜에는 대기 신청할 수 없습니다.")
     if not (0 <= start_hour < end_hour <= 24):

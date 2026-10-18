@@ -4,6 +4,11 @@ from app.db import now
 from app.models import Role, ServiceType, TestResult, User
 from app.routers import demo as demo_router
 
+def _phone_token(client, phone="010-2222-3333"):
+    code = client.post("/api/auth/phone/send", json={"phone": phone}).json()["demo_code"]
+    return client.post("/api/auth/phone/verify", json={"phone": phone, "code": code}).json()["phone_token"]
+
+
 SIGNUP = {
     "email": "New@Example.com ",
     "password": "pass1234",
@@ -14,8 +19,14 @@ SIGNUP = {
 }
 
 
+def _signup(client, **over):
+    """휴대폰 인증을 거쳐 가입한다(인증 흐름 자체는 test_identity.py에서 검증)."""
+    body = {**SIGNUP, **over}
+    return client.post("/api/auth/signup", json={**body, "phone_token": _phone_token(client, body["phone"])})
+
+
 def test_signup_creates_customer_with_self_subject_and_logs_in(client, db):
-    res = client.post("/api/auth/signup", json=SIGNUP)
+    res = _signup(client)
 
     assert res.status_code == 201, res.text
     body = res.json()
@@ -27,27 +38,27 @@ def test_signup_creates_customer_with_self_subject_and_logs_in(client, db):
 
 
 def test_signup_requires_privacy_consent_and_unique_email(client):
-    assert client.post("/api/auth/signup", json={**SIGNUP, "privacy_consent": False}).json()["detail"]["code"] == "CONSENT_REQUIRED"
-    assert client.post("/api/auth/signup", json=SIGNUP).status_code == 201
-    assert client.post("/api/auth/signup", json={**SIGNUP, "email": "new@example.com"}).json()["detail"]["code"] == "EMAIL_TAKEN"
+    assert _signup(client, **{"privacy_consent": False}).json()["detail"]["code"] == "CONSENT_REQUIRED"
+    assert _signup(client).status_code == 201
+    assert _signup(client, **{"email": "new@example.com", "phone": "010-2222-4444"}).json()["detail"]["code"] == "EMAIL_TAKEN"
 
 
 def test_signup_password_policy(client):
-    assert client.post("/api/auth/signup", json={**SIGNUP, "password": "short1"}).status_code == 422
-    assert client.post("/api/auth/signup", json={**SIGNUP, "password": "onlyletters"}).status_code == 422
+    assert _signup(client, **{"password": "short1"}).status_code == 422
+    assert _signup(client, **{"password": "onlyletters"}).status_code == 422
 
 
 def test_signup_requires_valid_birth_date(client):
     without = {k: v for k, v in SIGNUP.items() if k != "birth_date"}
     assert client.post("/api/auth/signup", json=without).status_code == 422
-    assert client.post("/api/auth/signup", json={**SIGNUP, "birth_date": "2999-01-01"}).status_code == 422
-    assert client.post("/api/auth/signup", json={**SIGNUP, "birth_date": "1991-02-30"}).status_code == 422
+    assert _signup(client, **{"birth_date": "2999-01-01"}).status_code == 422
+    assert _signup(client, **{"birth_date": "1991-02-30"}).status_code == 422
 
 
 def test_new_customer_can_claim_demo_kit(client, db):
     db.add(TestResult(kit_code="AL-DEMO-01", subject_id=None, service_type=ServiceType.METABOLIC, reported_at=now()))
     db.commit()
-    token = client.post("/api/auth/signup", json=SIGNUP).json()["access_token"]
+    token = _signup(client).json()["access_token"]
     h = {"Authorization": f"Bearer {token}"}
 
     me = client.get("/api/subjects", headers=h).json()[0]
@@ -80,5 +91,5 @@ def test_demo_endpoints_are_off_when_demo_mode_disabled(client, monkeypatch):
 
 def test_signup_cannot_create_staff_accounts(client):
     """역할은 입력받지 않는다. 클라이언트가 role을 보내도 고객으로만 가입된다."""
-    res = client.post("/api/auth/signup", json={**SIGNUP, "role": "ADMIN"})
+    res = _signup(client, **{"role": "ADMIN"})
     assert res.json()["user"]["role"] == "CUSTOMER"

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, ApiError, type Slot } from '../../api';
+import { api, ApiError, type Contact, type Slot } from '../../api';
 import { useAuth } from '../../auth';
 import { fmtDate, fmtDateTime, fmtTime, parseLocal, RELATION, today, weekday } from '../../format';
 import { Card, Empty, ErrorBox, Spinner, useAction, useAsync } from '../../components/ui';
@@ -38,7 +38,9 @@ export function BookConsultation() {
 
   const [date, setDate] = useState<string | null>(null);
   const [slot, setSlot] = useState<Slot | null>(null);
-  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [contact, setContact] = useState<Contact>('OWNER');
+  // 결과지(피검자)를 바꾸면 '나'로 되돌린다
+  useEffect(() => setContact('OWNER'), [subjectId]);
   const [tags, setTags] = useState<string[]>([]);
   const [questions, setQuestions] = useState('');
   const [alternatives, setAlternatives] = useState<Slot[] | null>(null);
@@ -72,7 +74,7 @@ export function BookConsultation() {
               slot_id: slot.id,
               subject_id: subject.id,
               result_id: result.id,
-              contact_phone: phone,
+              contact,
               pre_questions: questions,
               concern_tags: tags,
             }),
@@ -240,7 +242,7 @@ export function BookConsultation() {
                   subjectId={subject.id}
                   resultId={result.id}
                   date={date}
-                  phone={original?.contact_phone ?? phone}
+                  contact={original ? (original.contact_phone === user?.phone ? 'OWNER' : 'SUBJECT') : contact}
                   rescheduling={!!original}
                   onDone={() => nav('/my/bookings?tab=waitlist')}
                 />
@@ -263,11 +265,26 @@ export function BookConsultation() {
             </dl>
             {!rescheduleId && (
               <div className="form">
-                <label>
-                  상담 전화 받을 번호
-                  <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" />
-                  <span className="hint">가족 결과 상담이라면 실제 통화하실 분의 번호를 입력해주세요.</span>
-                </label>
+                <div>
+                  <div className="label">상담 전화 받으실 분</div>
+                  <div className="choice-list single">
+                    <label className={`choice ${contact === 'OWNER' ? 'on' : ''}`}>
+                      <input type="radio" name="contact" checked={contact === 'OWNER'} onChange={() => setContact('OWNER')} />
+                      <span>
+                        <strong>나</strong> <span className="muted small">{user?.phone}</span>
+                      </span>
+                    </label>
+                    {subject && subject.relation !== 'SELF' && subject.consent_at && subject.phone_masked && (
+                      <label className={`choice ${contact === 'SUBJECT' ? 'on' : ''}`}>
+                        <input type="radio" name="contact" checked={contact === 'SUBJECT'} onChange={() => setContact('SUBJECT')} />
+                        <span>
+                          <strong>{subject.name}님</strong> <span className="muted small">{subject.phone_masked}</span>
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                  <span className="hint">본인 확인을 마친 번호로만 상담 전화를 드립니다.</span>
+                </div>
                 <div>
                   <div className="label">궁금한 주제 (선택)</div>
                   <div className="chips">
@@ -310,14 +327,14 @@ function WaitlistForm({
   subjectId,
   resultId,
   date,
-  phone,
+  contact,
   rescheduling,
   onDone,
 }: {
   subjectId: number;
   resultId: number;
   date: string;
-  phone: string;
+  contact: Contact;
   rescheduling: boolean;
   onDone: () => void;
 }) {
@@ -357,7 +374,7 @@ function WaitlistForm({
                   desired_date: date,
                   start_hour: start,
                   end_hour: end,
-                  contact_phone: phone,
+                  contact,
                   pre_questions: '',
                 }),
               )

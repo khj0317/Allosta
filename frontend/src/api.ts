@@ -197,6 +197,9 @@ export interface Meta {
   demo_mode: boolean;
 }
 
+/** 상담 전화를 받을 사람: 계정 주인 또는 인증을 마친 가족 본인 (번호는 서버가 정한다) */
+export type Contact = 'OWNER' | 'SUBJECT';
+
 export interface FamilyCode {
   subject: Subject;
   demo_code: string | null;
@@ -208,6 +211,7 @@ export interface SignupInput {
   name: string;
   phone: string;
   birth_date: string;
+  phone_token: string;
   privacy_consent: boolean;
 }
 
@@ -314,6 +318,9 @@ const qs = (params: Record<string, string | number | undefined | null>) =>
 export const api = {
   login: (email: string, password: string) =>
     request<{ access_token: string; user: User }>('POST', '/api/auth/login', { email, password }),
+  sendPhoneCode: (phone: string) => request<{ sent: boolean; demo_code: string | null }>('POST', '/api/auth/phone/send', { phone }),
+  verifyPhoneCode: (phone: string, code: string) =>
+    request<{ phone_token: string }>('POST', '/api/auth/phone/verify', { phone, code }),
   signup: (body: SignupInput) => request<{ access_token: string; user: User }>('POST', '/api/auth/signup', body),
   me: () => request<User>('GET', '/api/auth/me'),
   demoSession: (role: Role) => request<{ access_token: string; user: User }>('POST', '/api/demo/session', { role }),
@@ -342,7 +349,7 @@ export const api = {
     slot_id: number;
     subject_id: number;
     result_id: number;
-    contact_phone: string;
+    contact: Contact;
     pre_questions: string;
     concern_tags: string[];
   }) => request<Booking>('POST', '/api/bookings', body),
@@ -359,7 +366,7 @@ export const api = {
     desired_date: string;
     start_hour: number;
     end_hour: number;
-    contact_phone: string;
+    contact: Contact;
     pre_questions: string;
   }) => request<WaitlistEntry>('POST', '/api/waitlist', body),
   myWaitlist: () => request<WaitlistEntry[]>('GET', '/api/waitlist/me'),

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["SCHEDULER_INTERVAL_SECONDS"] = "0"
+os.environ["FAMILY_CODE_RESEND_SECONDS"] = "0"  # 테스트에서는 재발송 간격 제한 없음
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -53,7 +54,8 @@ class Factory:
         return self.n
 
     def user(self, role=Role.CUSTOMER, name="고객"):
-        u = User(email=f"u{self._id()}@t.kr", name=name, phone="010-1111-2222", role=role, password_hash=_PW)
+        n = self._id()
+        u = User(email=f"u{n}@t.kr", name=name, phone=f"010-1111-{n:04d}", role=role, password_hash=_PW)
         self.db.add(u)
         self.db.commit()
         return u

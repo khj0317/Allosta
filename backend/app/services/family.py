@@ -20,6 +20,7 @@ from ..db import now
 from ..errors import AppError, not_found
 from ..models import Booking, Relation, Subject, TestResult, User
 from . import notification
+from .phone import normalize, same_phone
 
 log = logging.getLogger("allostar.family")
 
@@ -72,7 +73,7 @@ def add_family(db: Session, owner: User, *, name: str, relation: Relation, birth
     if any(f.phone and _digits(f.phone) == _digits(phone) for f in family):
         raise AppError(409, "PHONE_IN_USE", "이미 다른 가족에게 등록된 휴대폰 번호입니다.")
 
-    s = Subject(owner_id=owner.id, name=name.strip(), relation=relation, birth_date=birth_date, phone=phone)
+    s = Subject(owner_id=owner.id, name=name.strip(), relation=relation, birth_date=birth_date, phone=normalize(phone))
     db.add(s)
     db.flush()
     code = _send_code(db, owner, s)
@@ -121,10 +122,24 @@ def remove_family(db: Session, owner: User, subject_id: int) -> None:
     db.commit()
 
 
+def subject_phone(s: Subject) -> str | None:
+    """피검자의 인증된 휴대폰: 본인은 계정(가입 시 인증) 번호, 가족은 가족 인증을 마친 번호."""
+    if s.consent_at is None:
+        return None
+    return s.phone
+
+
 def kit_matches(r: TestResult, s: Subject) -> bool:
+    """키트 접수 때 등록된 검사자 = 이 피검자인가.
+
+    이름·생년월일은 가족·지인이 쉽게 알 수 있어 그것만으로는 '남의 이름으로 본인 가입'을 막지 못한다.
+    그래서 등록 휴대폰이 있으면 피검자의 '인증된' 휴대폰과도 일치해야 한다.
+    """
     if r.registered_name is None:
         return True  # 미등록 키트
-    return _norm_name(r.registered_name) == _norm_name(s.name) and r.registered_birth_date == s.birth_date
+    if _norm_name(r.registered_name) != _norm_name(s.name) or r.registered_birth_date != s.birth_date:
+        return False
+    return r.registered_phone is None or same_phone(r.registered_phone, subject_phone(s))
 
 
 def claim_kit(db: Session, owner: User, subject_id: int, kit_code: str) -> Subject:
@@ -138,10 +153,11 @@ def claim_kit(db: Session, owner: User, subject_id: int, kit_code: str) -> Subje
         raise AppError(409, "KIT_ALREADY_CLAIMED", "이미 다른 피검자에 연결된 키트입니다.")
     if not kit_matches(r, s):
         # 어떤 정보가 틀렸는지 알려주지 않는다(남의 키트 정보 추측 방지)
-        raise AppError(400, "KIT_OWNER_MISMATCH", "키트에 등록된 검사자 정보(이름·생년월일)와 일치하지 않습니다.")
+        raise AppError(400, "KIT_OWNER_MISMATCH", "키트에 등록된 검사자 정보(이름·생년월일·휴대폰)와 일치하지 않습니다.")
     if r.registered_name is None:
         r.registered_name = s.name
         r.registered_birth_date = s.birth_date
+        r.registered_phone = subject_phone(s)
     r.subject_id = s.id
     db.commit()
     db.refresh(s)

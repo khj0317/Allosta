@@ -1,0 +1,101 @@
+"""가입 전 본인 휴대폰 확인.
+
+흐름: 번호 입력 → 인증번호 발송 → 인증번호 확인 → 일회용 phone_token 발급 → 가입 요청에 토큰 첨부.
+토큰은 그 번호에만 묶이고(다른 번호로 가입 불가) 30분 안에 한 번만 쓸 수 있다.
+번호·코드·토큰은 모두 해시로만 저장한다.
+"""
+import hashlib
+import hmac
+import re
+import secrets
+from datetime import timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..config import settings
+from ..db import now
+from ..errors import AppError
+from ..models import PhoneVerification, User
+from . import notification
+
+TOKEN_MINUTES = 30
+
+
+def digits(phone: str | None) -> str:
+    return re.sub(r"\D", "", phone or "")
+
+
+def normalize(phone: str) -> str:
+    """저장용 표준 형식 010-1234-5678 (10자리는 010-123-4567). 같은 번호가 다른 표기로 중복 저장되지 않게 한다."""
+    d = digits(phone)
+    mid = 6 if len(d) == 10 else 7
+    return f"{d[:3]}-{d[3:mid]}-{d[mid:]}"
+
+
+def same_phone(a: str | None, b: str | None) -> bool:
+    return bool(a and b) and digits(a) == digits(b)
+
+
+def _h(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def phone_taken(db: Session, phone: str) -> bool:
+    return db.query(User).filter_by(phone=normalize(phone)).count() > 0
+
+
+def send(db: Session, phone: str) -> str:
+    d = digits(phone)
+    if phone_taken(db, d):
+        raise AppError(409, "PHONE_TAKEN", "이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
+    last = db.scalars(
+        select(PhoneVerification).where(PhoneVerification.phone == d).order_by(PhoneVerification.id.desc())
+    ).first()
+    if last and now() - last.created_at < timedelta(seconds=settings.family_code_resend_seconds):
+        raise AppError(429, "TOO_SOON", "잠시 후 다시 요청해주세요.")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    db.add(
+        PhoneVerification(
+            phone=d,
+            code_hash=_h(f"{d}:{code}"),
+            expires_at=now() + timedelta(minutes=settings.family_code_minutes),
+        )
+    )
+    db.commit()
+    notification.sms_sender.send(
+        phone,
+        "[알로스타] 휴대폰 인증",
+        f"인증번호 {code} 를 입력해주세요. ({settings.family_code_minutes}분 이내)",
+    )
+    return code
+
+
+def verify(db: Session, phone: str, code: str) -> str:
+    d = digits(phone)
+    v = db.scalars(
+        select(PhoneVerification).where(PhoneVerification.phone == d).order_by(PhoneVerification.id.desc())
+    ).first()
+    if v is None or v.expires_at < now():
+        raise AppError(400, "CODE_EXPIRED", "인증번호가 만료되었습니다. 다시 받아주세요.")
+    if v.attempts >= settings.family_code_max_attempts:
+        raise AppError(429, "TOO_MANY_ATTEMPTS", "입력 횟수를 초과했습니다. 인증번호를 다시 받아주세요.")
+    v.attempts += 1
+    if not hmac.compare_digest(v.code_hash, _h(f"{d}:{code}")):
+        db.commit()
+        left = settings.family_code_max_attempts - v.attempts
+        raise AppError(400, "CODE_MISMATCH", f"인증번호가 일치하지 않습니다. (남은 횟수 {left}회)")
+    token = secrets.token_urlsafe(24)
+    v.verified_at = now()
+    v.token_hash = _h(token)
+    v.expires_at = now() + timedelta(minutes=TOKEN_MINUTES)
+    db.commit()
+    return token
+
+
+def consume_token(db: Session, phone: str, token: str) -> None:
+    """가입 요청의 phone_token 검증. 그 번호로 확인된, 만료·사용 전 토큰이어야 한다."""
+    v = db.scalars(select(PhoneVerification).where(PhoneVerification.token_hash == _h(token or ""))).first()
+    if v is None or v.phone != digits(phone) or v.used_at is not None or v.expires_at < now():
+        raise AppError(400, "PHONE_NOT_VERIFIED", "휴대폰 인증을 먼저 완료해주세요.")
+    v.used_at = now()

@@ -386,3 +386,9 @@ label.check.consent input { margin-top: 3px; flex: none; }
 
 label > .hint { margin-top: -2px; }
 .code-input { font-size: 22px; letter-spacing: 0.4em; font-variant-numeric: tabular-nums; text-align: center; }
+.choice-list.single { grid-template-columns: 1fr; }
+.form-group { display: flex; flex-direction: column; gap: 14px; }
+.input-row { display: flex; gap: 8px; }
+.input-row > input { flex: 1; min-width: 0; }
+.input-row > .btn { flex: none; }
+.text-ok { color: var(--ok); font-weight: 600; }
