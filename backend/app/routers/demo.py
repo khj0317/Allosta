@@ -1,0 +1,58 @@
+"""데모 전용 기능. DEMO_MODE=false 이면 모든 엔드포인트가 404를 돌려준다.
+
+평가·시연 시 비밀번호 없이 역할별 데모 계정으로 바로 들어가 흐름을 확인하기 위한 것이다.
+운영 환경에서는 반드시 끈다(비밀번호 없이 데모 계정으로 로그인되므로).
+"""
+from fastapi import APIRouter, Depends
+
+from ..config import settings
+from ..constants import SERVICE_LABELS
+from ..errors import AppError
+from ..models import Role, TestResult, User
+from ..schemas import DemoSessionIn, TokenOut
+from ..security import CustomerUser, DbSession, create_token
+from ..services import family
+from .auth import to_user_out
+
+DEMO_ACCOUNTS = {
+    Role.CUSTOMER: "customer@allostar.kr",
+    Role.COUNSELOR: "counselor1@allostar.kr",
+    Role.ADMIN: "admin@allostar.kr",
+}
+# 시드가 만들어 두는 미연결 키트. 새로 가입한 계정이 바로 결과지를 연결해 볼 수 있다.
+DEMO_KIT_PREFIX = "AL-DEMO-"
+
+
+def _require_demo_mode() -> None:
+    if not settings.demo_mode:
+        raise AppError(404, "NOT_FOUND", "데모 모드가 꺼져 있습니다.")
+
+
+router = APIRouter(prefix="/api/demo", tags=["demo"], dependencies=[Depends(_require_demo_mode)])
+
+
+@router.post("/session", response_model=TokenOut)
+def demo_session(body: DemoSessionIn, db: DbSession):
+    user = db.query(User).filter_by(email=DEMO_ACCOUNTS[body.role]).one_or_none()
+    if user is None:
+        raise AppError(404, "DEMO_ACCOUNT_MISSING", "데모 계정이 없습니다. python -m app.seed 를 실행해주세요.")
+    return TokenOut(access_token=create_token(user), user=to_user_out(user))
+
+
+@router.get("/kits")
+def demo_kits(db: DbSession, user: CustomerUser, subject_id: int):
+    """이 피검자에게 연결할 수 있는 데모 키트: 미등록 키트 + 이 피검자 이름·생년월일로 등록된 키트."""
+    subject = family.own_subject(db, user, subject_id)
+    rows = (
+        db.query(TestResult)
+        .filter(TestResult.kit_code.like(f"{DEMO_KIT_PREFIX}%"), TestResult.subject_id.is_(None))
+        .order_by(TestResult.kit_code)
+        .all()
+    )
+    # 이 사람 앞으로 등록된 키트를 먼저 보여준다
+    rows.sort(key=lambda r: r.registered_name is None)
+    return [
+        {"kit_code": r.kit_code, "service_label": SERVICE_LABELS[r.service_type], "registered": r.registered_name is not None}
+        for r in rows
+        if family.kit_matches(r, subject)
+    ]

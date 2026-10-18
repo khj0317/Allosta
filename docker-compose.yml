@@ -1,0 +1,25 @@
+# docker compose up --build   →  http://localhost:5173  (API 문서: http://localhost:8000/docs)
+services:
+  backend:
+    build: ./backend
+    environment:
+      FRONTEND_URL: http://localhost:5173
+      # always 로 바꾸면 컨테이너를 띄울 때마다 데모 데이터를 오늘 날짜 기준으로 다시 생성
+      SEED_ON_START: ${SEED_ON_START:-if-empty}
+      # 데모 계정 바로 입장·데모 키트 안내. 운영 배포 시 false
+      DEMO_MODE: ${DEMO_MODE:-true}
+    ports:
+      - "8000:8000"
+    volumes:
+      - allostar-data:/data
+
+  web:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  allostar-data:

@@ -1,0 +1,148 @@
+"""가족 피검자 등록·본인 확인·결과 연결.
+
+'진짜 가족만' 등록되도록 두 겹으로 막는다.
+1) 가족 본인 휴대폰 인증: 가족의 휴대폰으로 인증번호를 보내고, 가족이 계정 소유자에게 알려준 번호를 입력해야
+   등록이 완료된다. 체크박스 자기 확인과 달리 그 사람의 휴대폰을 가진 실제 인물이 동의했다는 근거가 남는다.
+2) 키트 등록 정보 대조: 검체 접수 때 등록된 이름·생년월일과 일치하는 피검자에게만 결과지를 연결한다.
+   인증을 통과한 가족이라도 다른 사람의 결과를 가져올 수 없다.
+"""
+import hashlib
+import hmac
+import logging
+import re
+import secrets
+from datetime import timedelta
+
+from sqlalchemy.orm import Session
+
+from ..config import settings
+from ..db import now
+from ..errors import AppError, not_found
+from ..models import Booking, Relation, Subject, TestResult, User
+from . import notification
+
+log = logging.getLogger("allostar.family")
+
+
+def _digits(phone: str) -> str:
+    return re.sub(r"\D", "", phone)
+
+
+def _hash(subject_id: int, code: str) -> str:
+    # 피검자 ID를 섞어 같은 코드라도 다른 해시가 되게 한다
+    return hashlib.sha256(f"{subject_id}:{code}".encode()).hexdigest()
+
+
+def _norm_name(name: str) -> str:
+    return re.sub(r"\s+", "", name)
+
+
+def own_subject(db: Session, user: User, subject_id: int) -> Subject:
+    s = db.get(Subject, subject_id)
+    if s is None or s.owner_id != user.id:
+        raise not_found("피검자")
+    return s
+
+
+def _send_code(db: Session, owner: User, s: Subject) -> str:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    s.verify_code_hash = _hash(s.id, code)
+    s.verify_expires_at = now() + timedelta(minutes=settings.family_code_minutes)
+    s.verify_attempts = 0
+    s.verify_sent_at = now()
+    # 수신자가 서비스 회원이 아닐 수 있어 아웃박스(회원 알림함) 대신 발송기로 바로 보낸다.
+    notification.sms_sender.send(
+        s.phone,
+        "[알로스타] 가족 등록 확인",
+        f"{owner.name}님이 회원님({s.name})을 가족으로 등록해 검사 결과 상담을 받으려고 합니다.\n"
+        f"동의하시면 인증번호 {code} 를 {owner.name}님께 알려주세요. ({settings.family_code_minutes}분 이내)\n"
+        f"본인이 요청한 것이 아니라면 이 문자를 무시하세요.",
+    )
+    return code
+
+
+def add_family(db: Session, owner: User, *, name: str, relation: Relation, birth_date, phone: str) -> tuple[Subject, str]:
+    if relation == Relation.SELF:
+        raise AppError(400, "INVALID_RELATION", "본인은 가입 시 자동으로 등록됩니다.")
+    family = db.query(Subject).filter(Subject.owner_id == owner.id, Subject.relation != Relation.SELF).all()
+    if len(family) >= settings.max_family_members:
+        raise AppError(400, "FAMILY_LIMIT", f"가족은 최대 {settings.max_family_members}명까지 등록할 수 있습니다.")
+    if _digits(phone) == _digits(owner.phone):
+        raise AppError(400, "OWN_PHONE", "가족 본인의 휴대폰 번호를 입력해주세요. 인증번호가 그 번호로 발송됩니다.")
+    if any(f.phone and _digits(f.phone) == _digits(phone) for f in family):
+        raise AppError(409, "PHONE_IN_USE", "이미 다른 가족에게 등록된 휴대폰 번호입니다.")
+
+    s = Subject(owner_id=owner.id, name=name.strip(), relation=relation, birth_date=birth_date, phone=phone)
+    db.add(s)
+    db.flush()
+    code = _send_code(db, owner, s)
+    db.commit()
+    return s, code
+
+
+def resend_code(db: Session, owner: User, subject_id: int) -> tuple[Subject, str]:
+    s = own_subject(db, owner, subject_id)
+    if s.consent_at:
+        raise AppError(400, "ALREADY_VERIFIED", "이미 확인이 끝난 가족입니다.")
+    if s.verify_sent_at and now() - s.verify_sent_at < timedelta(seconds=settings.family_code_resend_seconds):
+        raise AppError(429, "TOO_SOON", "잠시 후 다시 요청해주세요.")
+    code = _send_code(db, owner, s)
+    db.commit()
+    return s, code
+
+
+def verify(db: Session, owner: User, subject_id: int, code: str) -> Subject:
+    s = own_subject(db, owner, subject_id)
+    if s.consent_at:
+        return s
+    if not s.verify_code_hash or not s.verify_expires_at or s.verify_expires_at < now():
+        raise AppError(400, "CODE_EXPIRED", "인증번호가 만료되었습니다. 다시 받아주세요.")
+    if s.verify_attempts >= settings.family_code_max_attempts:
+        raise AppError(429, "TOO_MANY_ATTEMPTS", "입력 횟수를 초과했습니다. 인증번호를 다시 받아주세요.")
+    s.verify_attempts += 1
+    if not hmac.compare_digest(s.verify_code_hash, _hash(s.id, code)):
+        db.commit()
+        left = settings.family_code_max_attempts - s.verify_attempts
+        raise AppError(400, "CODE_MISMATCH", f"인증번호가 일치하지 않습니다. (남은 횟수 {left}회)")
+    s.consent_at = now()
+    s.verify_code_hash = None
+    s.verify_expires_at = None
+    db.commit()
+    return s
+
+
+def remove_family(db: Session, owner: User, subject_id: int) -> None:
+    s = own_subject(db, owner, subject_id)
+    if s.relation == Relation.SELF:
+        raise AppError(400, "CANNOT_REMOVE_SELF", "본인 프로필은 삭제할 수 없습니다.")
+    if s.results or db.query(Booking).filter_by(subject_id=s.id).count():
+        raise AppError(409, "HAS_HISTORY", "결과지나 상담 이력이 있는 가족은 삭제할 수 없습니다.")
+    db.delete(s)
+    db.commit()
+
+
+def kit_matches(r: TestResult, s: Subject) -> bool:
+    if r.registered_name is None:
+        return True  # 미등록 키트
+    return _norm_name(r.registered_name) == _norm_name(s.name) and r.registered_birth_date == s.birth_date
+
+
+def claim_kit(db: Session, owner: User, subject_id: int, kit_code: str) -> Subject:
+    s = own_subject(db, owner, subject_id)
+    if s.consent_at is None:
+        raise AppError(400, "NOT_VERIFIED", f"{s.name}님의 휴대폰 인증을 먼저 완료해주세요.")
+    r = db.query(TestResult).filter_by(kit_code=kit_code.upper()).one_or_none()
+    if r is None:
+        raise AppError(404, "KIT_NOT_FOUND", "등록된 결과지가 없는 키트 코드입니다. 분석이 끝나지 않았을 수 있어요.")
+    if r.subject_id and r.subject_id != s.id:
+        raise AppError(409, "KIT_ALREADY_CLAIMED", "이미 다른 피검자에 연결된 키트입니다.")
+    if not kit_matches(r, s):
+        # 어떤 정보가 틀렸는지 알려주지 않는다(남의 키트 정보 추측 방지)
+        raise AppError(400, "KIT_OWNER_MISMATCH", "키트에 등록된 검사자 정보(이름·생년월일)와 일치하지 않습니다.")
+    if r.registered_name is None:
+        r.registered_name = s.name
+        r.registered_birth_date = s.birth_date
+    r.subject_id = s.id
+    db.commit()
+    db.refresh(s)
+    return s
