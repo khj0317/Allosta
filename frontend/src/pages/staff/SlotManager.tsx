@@ -165,8 +165,8 @@ function BulkCreate({ counselorId, onDone, defaultFrom }: { counselorId?: number
         }}
       >
         <div className="grid-2">
-          <label>시작일<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} required /></label>
-          <label>종료일<input type="date" value={to} onChange={(e) => setTo(e.target.value)} required /></label>
+          <label>시작일<input type="date" min={today()} value={from} onChange={(e) => setFrom(e.target.value)} required /></label>
+          <label>종료일<input type="date" min={from} value={to} onChange={(e) => setTo(e.target.value)} required /></label>
         </div>
         <div>
           <div className="label">요일</div>

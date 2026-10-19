@@ -13,11 +13,8 @@ export function StaffSchedule() {
   const [counselorId, setCounselorId] = useState<number | undefined>();
   const counselors = useAsync(() => (isAdmin ? api.counselors() : Promise.resolve([])), [isAdmin]);
   const day = useAsync(() => api.staffBookings(date, date, counselorId), [date, counselorId]);
-  // 최근 7일 중 기록 미제출 상담(상담사 업무 누락 방지)
-  const pending = useAsync(
-    () => api.staffBookings(addDays(today(), -7), today(), counselorId).then((l) => l.filter((b) => b.status === 'CONFIRMED' && parseLocal(b.start_at) < new Date())),
-    [counselorId],
-  );
+  // 시간이 지났는데 기록 제출·부재 처리가 안 된 상담(기간 제한 없음): 처리해야 고객이 요약을 받고 지표가 맞는다
+  const pending = useAsync(() => api.overdueBookings(counselorId), [counselorId]);
 
   const list = day.data ?? [];
   const active = list.filter((b) => b.status !== 'CANCELLED');
@@ -50,14 +47,17 @@ export function StaffSchedule() {
       {pending.data && pending.data.length > 0 && (
         <div className="alert alert-warn">
           <div>
-            <strong>기록 미제출 상담 {pending.data.length}건</strong> — 상담 후 기록을 제출해야 완료 처리되고 고객에게 요약이 전달됩니다.
+            <strong>처리 안 된 지난 상담 {pending.data.length}건</strong> — 기록을 제출하거나 부재 처리해야 고객에게 요약이 전달되고 지표에
+            반영됩니다.
           </div>
           <div className="chips">
-            {pending.data.map((b) => (
+            {pending.data.slice(0, 10).map((b) => (
               <Link key={b.id} to={`/staff/bookings/${b.id}`} className="chip">
                 {fmtDate(b.start_at)} {fmtTime(b.start_at)} {b.customer_name}
+                {isAdmin && ` · ${b.counselor_name}`}
               </Link>
             ))}
+            {pending.data.length > 10 && <span className="small muted">외 {pending.data.length - 10}건</span>}
           </div>
         </div>
       )}

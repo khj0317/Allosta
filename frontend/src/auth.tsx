@@ -9,6 +9,8 @@ interface AuthState {
   /** 데모 모드 전용: 비밀번호 없이 해당 역할의 데모 계정으로 입장 */
   switchDemoRole: (role: Role) => Promise<User>;
   logout: () => void;
+  /** 서버가 돌려준 최신 사용자 정보로 교체(비밀번호 변경 후 등) */
+  setCurrentUser: (u: User) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -44,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, login, signup, switchDemoRole, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, signup, switchDemoRole, logout, setCurrentUser: setUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import settings
+from ..db import now
 from ..models import (
     Booking,
     BookingStatus,
@@ -34,6 +35,7 @@ def _rate(n: int, d: int) -> float | None:
 
 
 def dashboard(db: Session, date_from: date, date_to: date) -> dict:
+    t = now()
     start = datetime.combine(date_from, time.min)
     end = datetime.combine(date_to + timedelta(days=1), time.min)
     window = timedelta(days=settings.attribution_days)
@@ -98,7 +100,9 @@ def dashboard(db: Session, date_from: date, date_to: date) -> dict:
             "cancelled": cancelled,
             "completed": len(done),
             "no_show": no_show,
-            "upcoming": sum(b.status == BookingStatus.CONFIRMED for b in items),
+            # 확정 상태라도 시간이 지났으면 '예정'이 아니라 처리 누락(기록·부재 미처리)
+            "upcoming": sum(b.status == BookingStatus.CONFIRMED and b.slot.end_at > t for b in items),
+            "overdue": sum(b.status == BookingStatus.CONFIRMED and b.slot.end_at <= t for b in items),
             "cancel_rate": _rate(cancelled, total),
             "no_show_rate": _rate(no_show, held),
             "attendance_confirm_rate": _rate(

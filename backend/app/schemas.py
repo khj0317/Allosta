@@ -40,6 +40,25 @@ class LoginIn(BaseModel):
     password: str
 
 
+def _password_policy(v: str) -> str:
+    if not (any(c.isalpha() for c in v) and any(c.isdigit() for c in v)):
+        raise ValueError("비밀번호는 영문과 숫자를 모두 포함해야 합니다.")
+    return v
+
+
+Password = Annotated[str, StringConstraints(min_length=8, max_length=72)]
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: Password
+
+    @field_validator("new_password")
+    @classmethod
+    def _policy(cls, v: str) -> str:
+        return _password_policy(v)
+
+
 class SignupIn(BaseModel):
     email: Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
     password: Annotated[str, StringConstraints(min_length=8, max_length=72)]
@@ -61,10 +80,8 @@ class SignupIn(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def _password_policy(cls, v: str) -> str:
-        if not (any(c.isalpha() for c in v) and any(c.isdigit() for c in v)):
-            raise ValueError("비밀번호는 영문과 숫자를 모두 포함해야 합니다.")
-        return v
+    def _policy(cls, v: str) -> str:
+        return _password_policy(v)
 
 
 class PhoneSendIn(BaseModel):
@@ -87,6 +104,7 @@ class UserOut(ORM):
     phone: str
     role: Role
     counselor_id: int | None = None
+    must_change_password: bool = False
 
 
 class TokenOut(BaseModel):
@@ -347,6 +365,8 @@ class RecordIn(BaseModel):
     follow_up_needed: bool = False
     follow_up_date: date | None = None
     recommendations: list[RecommendationIn] = []
+    # 제출된(고객에게 공유된) 기록을 고칠 때만 필수
+    edit_reason: Annotated[str, StringConstraints(max_length=300)] = ""
 
     @field_validator("concern_tags")
     @classmethod
@@ -398,12 +418,23 @@ class CustomerRecordOut(BaseModel):
     submitted_at: datetime | None
 
 
+class RevisionOut(BaseModel):
+    id: int
+    editor_name: str
+    reason: str
+    changed_fields: list[str]
+    created_at: datetime
+
+
 class CounselorBookingDetail(BaseModel):
     booking: BookingOut
     result: ResultDetail
     customer_phone: str
     past_bookings: list[BookingOut]
     record: RecordOut | None
+    # 제출된 기록을 수정할 수 있는 마지막 시각(지나면 고정)
+    record_editable_until: datetime | None = None
+    revisions: list[RevisionOut] = []
 
 
 # ---------------------------------------------------------------- etc
@@ -430,6 +461,38 @@ class OrderIn(BaseModel):
     customer_email: str
     ordered_at: datetime
     items: list[OrderItemIn]
+
+
+class CounselorCreateIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+    email: Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    phone: Phone
+    specialties: Annotated[list[ServiceType], Field(min_length=1)]
+    bio: Annotated[str, StringConstraints(max_length=300)] = ""
+
+
+class CounselorPatchIn(BaseModel):
+    active: bool | None = None
+    specialties: Annotated[list[ServiceType], Field(min_length=1)] | None = None
+    bio: Annotated[str, StringConstraints(max_length=300)] | None = None
+
+
+class CounselorAdminOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str
+    specialties: list[ServiceType]
+    bio: str
+    active: bool
+    must_change_password: bool
+    upcoming_bookings: int
+
+
+class CounselorCreatedOut(BaseModel):
+    counselor: CounselorAdminOut
+    # 한 번만 보여주는 임시 비밀번호. 상담사는 첫 로그인 후 반드시 변경해야 한다.
+    temp_password: str
 
 
 class CounselorOut(BaseModel):

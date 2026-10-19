@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import now
 from ..errors import AppError, forbidden
 from ..models import (
@@ -11,8 +14,43 @@ from ..models import (
     NotificationType,
     Product,
     ProductRecommendation,
+    RecordRevision,
     RecordStatus,
+    User,
 )
+
+# 고객에게 공유되는 항목. 이 중 하나라도 바뀌면 고객에게 수정 알림을 보낸다.
+CUSTOMER_FIELDS = {"customer_message", "lifestyle_advice", "discussed_indicator_ids", "recommendations", "follow_up_date", "follow_up_needed"}
+FIELD_LABELS = {
+    "concern_tags": "관심사 태그",
+    "discussed_indicator_ids": "논의 지표",
+    "summary": "내부 요약",
+    "customer_message": "고객 안내 메시지",
+    "lifestyle_advice": "생활습관 가이드",
+    "follow_up_needed": "후속 조치",
+    "follow_up_date": "후속 일정",
+    "recommendations": "추천 제품",
+}
+
+
+def snapshot(r: ConsultationRecord) -> dict:
+    return {
+        "concern_tags": list(r.concern_tags or []),
+        "discussed_indicator_ids": sorted(r.discussed_indicator_ids or []),
+        "summary": r.summary,
+        "customer_message": r.customer_message,
+        "lifestyle_advice": r.lifestyle_advice,
+        "follow_up_needed": r.follow_up_needed,
+        "follow_up_date": r.follow_up_date.isoformat() if r.follow_up_date else None,
+        "recommendations": sorted(
+            ({"product_id": x.product_id, "interest_level": x.interest_level.value, "note": x.note} for x in r.recommendations),
+            key=lambda x: x["product_id"],
+        ),
+    }
+
+
+def editable_until(r: ConsultationRecord):
+    return r.submitted_at + timedelta(days=settings.record_edit_days) if r.submitted_at else None
 from . import notification
 
 
@@ -38,10 +76,20 @@ def get_or_create(db: Session, booking: Booking) -> ConsultationRecord:
     return record
 
 
-def save(db: Session, booking: Booking, data) -> ConsultationRecord:
+def save(db: Session, booking: Booking, data, editor: User) -> ConsultationRecord:
+    """임시저장/수정. 이미 제출된 기록이면 수정 기간·사유를 확인하고 수정 이력을 남긴다."""
     if booking.status in (BookingStatus.CANCELLED, BookingStatus.NO_SHOW):
         raise AppError(400, "INVALID_STATE", "취소/부재 처리된 상담에는 기록을 작성할 수 없습니다.")
     record = get_or_create(db, booking)
+    submitted = record.status == RecordStatus.SUBMITTED
+    before = snapshot(record) if submitted else None
+    if submitted:
+        if now() > editable_until(record):
+            raise AppError(
+                403, "EDIT_WINDOW_CLOSED", f"제출 후 {settings.record_edit_days}일이 지난 기록은 수정할 수 없습니다."
+            )
+        if not (data.edit_reason or "").strip():
+            raise AppError(400, "EDIT_REASON_REQUIRED", "고객에게 공유된 기록입니다. 수정 사유를 입력해주세요.")
 
     valid_indicator_ids = {i.id for i in db.query(Indicator.id).filter(Indicator.result_id == booking.result_id)}
     bad = set(data.discussed_indicator_ids) - valid_indicator_ids
@@ -68,11 +116,32 @@ def save(db: Session, booking: Booking, data) -> ConsultationRecord:
         record.recommendations.append(
             ProductRecommendation(product_id=r.product_id, interest_level=r.interest_level, note=r.note)
         )
+    db.flush()
+    if submitted:
+        after = snapshot(record)
+        changed = [k for k in after if after[k] != before[k]]
+        if changed:
+            db.add(
+                RecordRevision(
+                    record_id=record.id, editor_id=editor.id, reason=data.edit_reason.strip(),
+                    changed_fields=changed, before=before,
+                )
+            )
+            if CUSTOMER_FIELDS & set(changed):
+                notification.enqueue(
+                    db,
+                    booking.customer,
+                    NotificationType.RECORD_SHARED,
+                    "상담 요약이 수정되었습니다",
+                    f"{booking.subject.name}님 상담 요약의 {', '.join(FIELD_LABELS[k] for k in changed if k in CUSTOMER_FIELDS)}이(가) 수정되었습니다.\n"
+                    f"{settings.frontend_url}/my/bookings/{booking.id}",
+                    booking_id=booking.id,
+                )
     db.commit()
     return record
 
 
-def submit(db: Session, booking: Booking, data) -> ConsultationRecord:
+def submit(db: Session, booking: Booking, data, editor: User) -> ConsultationRecord:
     if booking.slot.start_at > now():
         raise AppError(400, "TOO_EARLY", "상담 시작 이후에 기록을 제출할 수 있습니다.")
     if not data.summary.strip():
@@ -80,7 +149,7 @@ def submit(db: Session, booking: Booking, data) -> ConsultationRecord:
     if not data.concern_tags:
         raise AppError(400, "TAGS_REQUIRED", "관심사 태그를 1개 이상 선택해주세요.")
     first_submit = booking.record is None or booking.record.status != RecordStatus.SUBMITTED
-    record = save(db, booking, data)
+    record = save(db, booking, data, editor)
     if first_submit:
         record.status = RecordStatus.SUBMITTED
         record.submitted_at = now()
@@ -92,7 +161,7 @@ def submit(db: Session, booking: Booking, data) -> ConsultationRecord:
             NotificationType.RECORD_SHARED,
             "상담 내용이 정리되었습니다",
             f"{booking.subject.name}님 결과 상담 요약과 추천 사항을 확인해보세요.\n"
-            f"{notification.settings.frontend_url}/my/bookings/{booking.id}",
+            f"{settings.frontend_url}/my/bookings/{booking.id}",
             booking_id=booking.id,
         )
         db.commit()

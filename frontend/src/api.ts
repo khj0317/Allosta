@@ -15,6 +15,8 @@ export interface User {
   phone: string;
   role: Role;
   counselor_id: number | null;
+  /** 운영자가 임시 비밀번호로 발급한 계정: 첫 로그인 후 비밀번호 변경 필수 */
+  must_change_password: boolean;
 }
 
 export interface ResultSummary {
@@ -159,6 +161,8 @@ export interface RecordInput {
   follow_up_needed: boolean;
   follow_up_date: string | null;
   recommendations: Recommendation[];
+  /** 제출(고객 공유)된 기록을 고칠 때만 필수 */
+  edit_reason?: string;
 }
 
 export interface CustomerRecord {
@@ -177,6 +181,20 @@ export interface CounselorBookingDetail {
   customer_phone: string;
   past_bookings: Booking[];
   record: ConsultRecord | null;
+  record_editable_until: string | null;
+  revisions: { id: number; editor_name: string; reason: string; changed_fields: string[]; created_at: string }[];
+}
+
+export interface CounselorAdmin {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  specialties: ServiceType[];
+  bio: string;
+  active: boolean;
+  must_change_password: boolean;
+  upcoming_bookings: number;
 }
 
 export interface Notification {
@@ -229,6 +247,8 @@ export interface Summary {
   completed: number;
   no_show: number;
   upcoming: number;
+  /** 시간이 지났는데 완료·부재 처리가 안 된 상담 */
+  overdue: number;
   cancel_rate: number | null;
   no_show_rate: number | null;
   attendance_confirm_rate: number | null;
@@ -323,6 +343,14 @@ export const api = {
     request<{ phone_token: string }>('POST', '/api/auth/phone/verify', { phone, code }),
   signup: (body: SignupInput) => request<{ access_token: string; user: User }>('POST', '/api/auth/signup', body),
   me: () => request<User>('GET', '/api/auth/me'),
+  changePassword: (current_password: string, new_password: string) =>
+    request<User>('POST', '/api/auth/password', { current_password, new_password }),
+  adminCounselors: () => request<CounselorAdmin[]>('GET', '/api/admin/counselors'),
+  createCounselor: (body: { name: string; email: string; phone: string; specialties: ServiceType[]; bio: string }) =>
+    request<{ counselor: CounselorAdmin; temp_password: string }>('POST', '/api/admin/counselors', body),
+  updateCounselor: (id: number, body: { active?: boolean; specialties?: ServiceType[]; bio?: string }) =>
+    request<CounselorAdmin>('PATCH', `/api/admin/counselors/${id}`, body),
+  overdueBookings: (counselor_id?: number) => request<Booking[]>('GET', '/api/staff/bookings/overdue' + qs({ counselor_id })),
   demoSession: (role: Role) => request<{ access_token: string; user: User }>('POST', '/api/demo/session', { role }),
   demoKits: (subjectId: number) =>
     request<{ kit_code: string; service_label: string; registered: boolean }[]>('GET', `/api/demo/kits?subject_id=${subjectId}`),

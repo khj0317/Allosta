@@ -56,6 +56,9 @@ def get_current_user(
     user = db.get(User, int(payload["sub"]))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "사용자를 찾을 수 없습니다.")
+    # 비활성화된 상담사는 이미 발급된 토큰으로도 접근할 수 없다
+    if user.counselor and not user.counselor.active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비활성화된 계정입니다.")
     return user
 
 

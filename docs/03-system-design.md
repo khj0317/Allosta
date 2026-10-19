@@ -410,6 +410,9 @@ MVP는 조회 시점 계산(on-the-fly). 데이터가 커지면 일 단위 집�
 | 상담 기록 | `PUT /api/staff/bookings/{id}/record`, `POST …/record/submit` | **배정 상담사만** | 임시저장 / 제출 |
 | 슬롯 관리 | `GET /api/staff/slots`, `POST /api/staff/slots/bulk`, `PATCH /api/staff/slots/{id}` | 상담사(본인) / 관리자 | |
 | 대시보드 | `GET /api/admin/dashboard?date_from&date_to` | 관리자 | |
+| 상담사 계정 | `GET/POST /api/admin/counselors`, `PATCH /api/admin/counselors/{id}` | 관리자 | 발급(임시 비밀번호), 담당 분석 수정, 비활성화 |
+| 처리 누락 | `GET /api/staff/bookings/overdue` | 상담사(본인) / 관리자 | 시간이 지났는데 기록·부재 처리가 안 된 상담(기간 제한 없음) |
+| 비밀번호 | `POST /api/auth/password` | 로그인 | 비밀번호 변경(임시 비밀번호 계정은 필수) |
 | 연동 | `POST /api/integrations/orders` | `X-API-Key` | 주문 웹훅(멱등) |
 
 ---
@@ -419,6 +422,9 @@ MVP는 조회 시점 계산(on-the-fly). 데이터가 커지면 일 단위 집�
 | 항목 | 설계 |
 |---|---|
 | 인증 | JWT(HS256), 비밀번호 PBKDF2-SHA256(20만 회, 솔트) — 표준 라이브러리만 사용 |
+| 로그인 잠금 | 계정별 연속 5회 실패 시 10분 잠금(잠긴 동안은 맞는 비밀번호도 거부), 성공 시 초기화. 없는 이메일도 같은 메시지로 응답해 가입 여부를 알 수 없게 함 |
+| 상담사 계정 | 회원가입으로 만들 수 없고 관리자만 발급. 임시 비밀번호는 발급 응답에 한 번만 담기고, 첫 로그인 후 변경 전에는 다른 화면에 접근 불가. 비활성화하면 로그인뿐 아니라 이미 발급된 토큰도 거부 |
+| 상담 기록 무결성 | 고객에게 공유된 기록은 제출 후 7일까지만 수정, 수정 사유 필수, 수정 전 전체 내용을 `record_revisions`에 보존. 고객 공개 항목이 바뀌면 고객에게 알림 |
 | 인가 | 역할 가드(`require_roles`) + **소유권 검사**(고객은 본인 피검자·예약만, 상담사는 본인 배정 예약만) |
 | 최소 권한 | 상담사는 **본인에게 배정된 상담의 결과지만** 열람. 관리자는 기록 작성 불가(읽기·운영 취소만) |
 | 민감정보 분리 | 고객 응답 스키마(`CustomerRecordOut`)에서 내부 요약·관심도 제외 |

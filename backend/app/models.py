@@ -131,6 +131,11 @@ class User(Base):
     phone: Mapped[str] = mapped_column(String(20), unique=True)
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[Role] = mapped_column(_enum(Role))
+    # 운영자가 임시 비밀번호로 발급한 계정(상담사 등)은 첫 로그인 후 비밀번호를 바꿔야 한다
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 로그인 연속 실패 잠금
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     counselor: Mapped["Counselor | None"] = relationship(back_populates="user", uselist=False)
@@ -352,6 +357,23 @@ class ConsultationRecord(Base):
     recommendations: Mapped[list["ProductRecommendation"]] = relationship(
         back_populates="record", cascade="all, delete-orphan"
     )
+
+
+class RecordRevision(Base):
+    """제출된 상담 기록의 수정 이력. 고객에게 공유된 뒤 내용이 바뀌면 '누가·언제·왜·무엇을' 남긴다."""
+
+    __tablename__ = "record_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_id: Mapped[int] = mapped_column(ForeignKey("consultation_records.id"), index=True)
+    editor_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str] = mapped_column(String(300))
+    changed_fields: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # 수정 전 내용 전체(복원·감사용)
+    before: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    editor: Mapped[User] = relationship()
 
 
 class ProductRecommendation(Base):

@@ -6,14 +6,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from ..config import settings
+from ..db import now
 from ..errors import AppError, forbidden, not_found
-from ..models import Booking, BookingStatus, Counselor, Role, Slot, SlotStatus, User
+from ..models import Booking, BookingStatus, Counselor, RecordRevision, Role, Slot, SlotStatus, User
 from ..schemas import (
     BookingOut,
     CancelIn,
     CounselorBookingDetail,
     RecordIn,
     RecordOut,
+    RevisionOut,
     SlotBulkIn,
     SlotBulkOut,
     SlotPatchIn,
@@ -45,6 +47,25 @@ def _staff_booking(db, user: User, booking_id: int) -> Booking:
     if user.role == Role.COUNSELOR and b.counselor_id != user.counselor.id:
         raise forbidden("본인에게 배정된 상담만 접근할 수 있습니다.")
     return b
+
+
+@router.get("/bookings/overdue", response_model=list[BookingOut])
+def overdue_bookings(user: StaffUser, db: DbSession, counselor_id: int | None = None):
+    """상담 시간이 지났는데 완료(기록 제출)·부재 처리가 안 된 예약. 기간 제한 없이 모두 보여준다.
+
+    처리되지 않으면 고객은 요약을 못 받고, 대시보드에서는 '예정'으로 잘못 집계된다.
+    """
+    stmt = (
+        select(Booking)
+        .join(Slot, Slot.id == Booking.slot_id)
+        .where(Booking.status == BookingStatus.CONFIRMED, Slot.end_at <= now())
+        .options(joinedload(Booking.slot), joinedload(Booking.record))
+        .order_by(Slot.start_at)
+    )
+    cid = _scope_counselor_id(user, counselor_id)
+    if cid:
+        stmt = stmt.where(Booking.counselor_id == cid)
+    return [booking_out(b) for b in db.scalars(stmt).unique().all()]
 
 
 @router.get("/bookings", response_model=list[BookingOut])
@@ -90,6 +111,14 @@ def booking_detail(booking_id: int, user: StaffUser, db: DbSession):
         customer_phone=b.customer.phone,
         past_bookings=[booking_out(p) for p in past],
         record=RecordOut.model_validate(b.record) if b.record else None,
+        record_editable_until=record_svc.editable_until(b.record) if b.record else None,
+        revisions=[
+            RevisionOut(id=r.id, editor_name=r.editor.name, reason=r.reason, changed_fields=r.changed_fields,
+                        created_at=r.created_at)
+            for r in db.scalars(
+                select(RecordRevision).where(RecordRevision.record_id == b.record.id).order_by(RecordRevision.id.desc())
+            )
+        ] if b.record else [],
     )
 
 
@@ -115,13 +144,13 @@ def staff_cancel(booking_id: int, body: CancelIn, user: StaffUser, db: DbSession
 @router.put("/bookings/{booking_id}/record", response_model=RecordOut)
 def save_record(booking_id: int, body: RecordIn, counselor: CurrentCounselor, db: DbSession):
     b = record_svc.get_booking_for_counselor(db, booking_id, counselor)
-    return record_svc.save(db, b, body)
+    return record_svc.save(db, b, body, counselor.user)
 
 
 @router.post("/bookings/{booking_id}/record/submit", response_model=RecordOut)
 def submit_record(booking_id: int, body: RecordIn, counselor: CurrentCounselor, db: DbSession):
     b = record_svc.get_booking_for_counselor(db, booking_id, counselor)
-    return record_svc.submit(db, b, body)
+    return record_svc.submit(db, b, body, counselor.user)
 
 
 # ---------------------------------------------------------------- 슬롯 관리
@@ -192,6 +221,8 @@ def bulk_create_slots(body: SlotBulkIn, user: StaffUser, db: DbSession):
         raise not_found("상담사")
     if body.date_to < body.date_from or (body.date_to - body.date_from).days > 62:
         raise AppError(400, "INVALID_RANGE", "기간은 최대 62일까지 지정할 수 있습니다.")
+    if body.date_from < now().date():
+        raise AppError(400, "PAST_DATE", "지난 날짜에는 상담 시간을 만들 수 없습니다.")
 
     start_t, end_t = _parse_hm(body.start_time), _parse_hm(body.end_time)
     brk = (
@@ -238,6 +269,8 @@ def patch_slot(slot_id: int, body: SlotPatchIn, user: StaffUser, db: DbSession):
     s = db.get(Slot, slot_id)
     if s is None:
         raise not_found("슬롯")
+    if s.start_at <= now():
+        raise AppError(400, "PAST_SLOT", "이미 지난 시간은 열거나 닫을 수 없습니다.")
     if user.role == Role.COUNSELOR and s.counselor_id != user.counselor.id:
         raise forbidden()
     booked = db.scalars(

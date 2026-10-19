@@ -12,10 +12,12 @@ import { MyBookings } from './pages/customer/MyBookings';
 import { MyResults } from './pages/customer/MyResults';
 import { Notifications } from './pages/customer/Notifications';
 import { ResultView } from './pages/customer/ResultView';
+import { ChangePassword } from './pages/ChangePassword';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ConsultWorkspace } from './pages/staff/ConsultWorkspace';
 import { SlotManager } from './pages/staff/SlotManager';
+import { CounselorAdmin } from './pages/admin/CounselorAdmin';
 import { StaffSchedule } from './pages/staff/StaffSchedule';
 import './styles.css';
 
@@ -23,6 +25,8 @@ function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
+  // 임시 비밀번호로 발급된 계정은 비밀번호를 바꾸기 전까지 다른 화면에 들어갈 수 없다
+  if (user.must_change_password) return <Navigate to="/password" replace />;
   if (!roles.includes(user.role)) return <Navigate to={homeFor(user)} replace />;
   return <>{children}</>;
 }
@@ -40,6 +44,7 @@ createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/password" element={<ChangePassword />} />
           <Route path="/" element={<Home />} />
           <Route element={<Layout />}>
             <Route path="/my" element={<Guard roles={['CUSTOMER']}><MyResults /></Guard>} />
@@ -56,6 +61,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/admin" element={<Guard roles={['ADMIN']}><Dashboard /></Guard>} />
             <Route path="/admin/bookings" element={<Guard roles={['ADMIN']}><StaffSchedule /></Guard>} />
             <Route path="/admin/slots" element={<Guard roles={['ADMIN']}><SlotManager /></Guard>} />
+            <Route path="/admin/counselors" element={<Guard roles={['ADMIN']}><CounselorAdmin /></Guard>} />
           </Route>
           <Route path="*" element={<Home />} />
         </Routes>

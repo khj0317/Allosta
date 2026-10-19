@@ -44,6 +44,11 @@ class Settings:
     family_code_resend_seconds: int = _env_int("FAMILY_CODE_RESEND_SECONDS", 30)
     # 계정당 등록 가능한 가족 수(본인 제외)
     max_family_members: int = _env_int("MAX_FAMILY_MEMBERS", 10)
+    # 로그인 연속 실패 잠금: N회 실패 시 M분 잠금
+    login_max_failures: int = _env_int("LOGIN_MAX_FAILURES", 5)
+    login_lock_minutes: int = _env_int("LOGIN_LOCK_MINUTES", 10)
+    # 제출된 상담 기록을 수정할 수 있는 기간(일). 이후에는 고정(의료 상담 기록의 신뢰성)
+    record_edit_days: int = _env_int("RECORD_EDIT_DAYS", 7)
     # 백그라운드 스케줄러 주기(초). 0이면 비활성화(테스트용)
     scheduler_interval_seconds: int = _env_int("SCHEDULER_INTERVAL_SECONDS", 20)
 

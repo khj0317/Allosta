@@ -16,6 +16,7 @@ const NAV = {
     { to: '/admin', label: '운영 대시보드', end: true },
     { to: '/admin/bookings', label: '전체 예약' },
     { to: '/admin/slots', label: '상담사 일정 관리' },
+    { to: '/admin/counselors', label: '상담사 계정' },
   ],
 } as const;
 

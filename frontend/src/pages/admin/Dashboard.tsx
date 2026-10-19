@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, type Dashboard as D } from '../../api';
 import { addDays, parseLocal, pct, today, weekday, won } from '../../format';
 import { Card, ErrorBox, Spinner, useAsync } from '../../components/ui';
@@ -43,6 +44,14 @@ function Body({ d }: { d: D }) {
   const s = d.summary;
   return (
     <div className="stack">
+      {s.overdue > 0 && (
+        <div className="alert alert-warn">
+          <div>
+            <strong>처리 안 된 지난 상담 {s.overdue}건</strong> — 상담 시간이 지났는데 기록 제출·부재 처리가 안 되어 완료율·부재율·전환율에서 빠져 있습니다.
+          </div>
+          <Link className="btn btn-sm" to="/admin/bookings">확인하기</Link>
+        </div>
+      )}
       <div className="kpis kpis-lg">
         <Kpi label="상담 전환율" value={pct(s.conversion_rate)} note={`추천 제품 구매 · 귀속 매출 ${won(s.attributed_revenue)}`} />
         <Kpi label="부재율" value={pct(s.no_show_rate)} note={`완료 ${s.completed} · 부재 ${s.no_show}`} />

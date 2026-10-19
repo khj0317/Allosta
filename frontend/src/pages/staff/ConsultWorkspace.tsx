@@ -6,6 +6,17 @@ import { BOOKING_STATUS, fmtDate, fmtDateTime, INTEREST, parseLocal, RELATION, w
 import { IndicatorTable } from '../../components/IndicatorTable';
 import { Badge, Card, ErrorBox, Spinner, useAction, useAsync } from '../../components/ui';
 
+const FIELD_LABEL: Record<string, string> = {
+  concern_tags: '관심사 태그',
+  discussed_indicator_ids: '논의 지표',
+  summary: '내부 요약',
+  customer_message: '고객 안내 메시지',
+  lifestyle_advice: '생활습관 가이드',
+  follow_up_needed: '후속 조치',
+  follow_up_date: '후속 일정',
+  recommendations: '추천 제품',
+};
+
 const EMPTY: RecordInput = {
   concern_tags: [],
   discussed_indicator_ids: [],
@@ -30,6 +41,7 @@ export function ConsultWorkspace() {
   const { data: products } = useAsync(api.products);
   const [form, setForm] = useState<RecordInput>(EMPTY);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [editReason, setEditReason] = useState('');
   const [onlyAbnormal, setOnlyAbnormal] = useState(true);
   const act = useAction();
 
@@ -67,8 +79,10 @@ export function ConsultWorkspace() {
 
   const b = d.booking;
   const started = parseLocal(b.start_at) <= new Date();
-  const editable = isCounselor && (b.status === 'CONFIRMED' || b.status === 'COMPLETED');
   const submitted = d.record?.status === 'SUBMITTED';
+  // 제출(고객 공유)된 기록은 정해진 기간까지만, 사유를 남기고 고칠 수 있다
+  const locked = submitted && !!d.record_editable_until && parseLocal(d.record_editable_until) < new Date();
+  const editable = isCounselor && (b.status === 'CONFIRMED' || b.status === 'COMPLETED') && !locked;
   const set = <K extends keyof RecordInput>(k: K, v: RecordInput[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const productName = (pid: number) => products.find((p) => p.id === pid)?.name ?? pid;
@@ -264,30 +278,80 @@ export function ConsultWorkspace() {
                   )}
                 </div>
 
-                {editable && (
-                  <div className="row-actions">
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      disabled={act.busy}
-                      onClick={() => act.run(() => api.saveRecord(b.id, form)).then((r) => setSavedAt(r.updated_at))}
-                    >
-                      임시저장
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={act.busy || !started}
-                      title={!started ? '상담 시작 후 제출할 수 있습니다' : ''}
-                      onClick={() => doAction(() => api.submitRecord(b.id, form))}
-                    >
-                      {submitted ? '수정 내용 저장' : '제출하고 상담 완료'}
-                    </button>
-                  </div>
+                {editable && submitted && (
+                  <label>
+                    수정 사유 *
+                    <input
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      maxLength={300}
+                      placeholder="예) 영양제 복용량 안내 정정"
+                    />
+                    <span className="hint">
+                      고객에게 이미 공유된 기록입니다. 수정 이력이 남고, 고객 안내 내용이 바뀌면 고객에게 알림이 갑니다.
+                      {d.record_editable_until && ` ${fmtDateTime(d.record_editable_until)}까지 수정할 수 있어요.`}
+                    </span>
+                  </label>
                 )}
+
+                {editable &&
+                  (submitted ? (
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={act.busy || !editReason.trim()}
+                        onClick={() =>
+                          doAction(() => api.saveRecord(b.id, { ...form, edit_reason: editReason })).then(() => setEditReason(''))
+                        }
+                      >
+                        수정 내용 저장
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={act.busy}
+                        onClick={() => act.run(() => api.saveRecord(b.id, form)).then((r) => setSavedAt(r.updated_at))}
+                      >
+                        임시저장
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={act.busy || !started}
+                        title={!started ? '상담 시작 후 제출할 수 있습니다' : ''}
+                        onClick={() => doAction(() => api.submitRecord(b.id, form))}
+                      >
+                        제출하고 상담 완료
+                      </button>
+                    </div>
+                  ))}
+                {locked && <p className="hint">제출 후 수정 기간이 지나 고정된 기록입니다.</p>}
               </fieldset>
             )}
           </Card>
+
+          {d.revisions.length > 0 && (
+            <Card title={`수정 이력 ${d.revisions.length}건`}>
+              <ul className="list">
+                {d.revisions.map((r) => (
+                  <li key={r.id} className="list-item">
+                    <div className="grow">
+                      <div>
+                        <strong>{r.reason}</strong>
+                      </div>
+                      <div className="muted small">
+                        {fmtDateTime(r.created_at)} · {r.editor_name} · {r.changed_fields.map((k) => FIELD_LABEL[k] ?? k).join(', ')}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </div>
       </div>
     </>

@@ -392,3 +392,4 @@ label > .hint { margin-top: -2px; }
 .input-row > input { flex: 1; min-width: 0; }
 .input-row > .btn { flex: none; }
 .text-ok { color: var(--ok); font-weight: 600; }
+.dim-row td { opacity: 0.5; }
