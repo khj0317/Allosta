@@ -20,7 +20,7 @@ from app.models import (
     WaitlistEntry,
     WaitlistStatus,
 )
-from app.services import account
+from app import constants
 from app.services import phone as phone_svc
 
 from .conftest import auth
@@ -122,7 +122,7 @@ def test_staff_and_demo_accounts_cannot_withdraw(client, f, db, monkeypatch):
     demo.email = "customer@allostar.kr"
     db.commit()
     assert _withdraw(client, demo).json()["detail"]["code"] == "WITHDRAW_BLOCKED"
-    monkeypatch.setattr(account, "settings", replace(settings, demo_mode=False))  # 운영에서는 일반 계정
+    monkeypatch.setattr(constants, "settings", replace(settings, demo_mode=False))  # 운영에서는 일반 계정
     assert _withdraw(client, demo).status_code == 204
 
 

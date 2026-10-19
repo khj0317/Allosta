@@ -114,3 +114,26 @@ def test_kit_claim_failures_are_limited_per_day(client, f, db):
         assert client.post(f"/api/subjects/{s.id}/claim-kit", json={"kit_code": f"AL-GUESS-{i}"}, headers=auth(u)).json()["detail"]["code"] == "KIT_CLAIM_FAILED"
     res = client.post(f"/api/subjects/{s.id}/claim-kit", json={"kit_code": "AL-GUESS-X"}, headers=auth(u))
     assert res.status_code == 429 and res.json()["detail"]["code"] == "TOO_MANY_KIT_ATTEMPTS"
+
+
+# ---------------------------------------------------------------- 단일 컨테이너 배포: 화면 서빙
+
+def test_frontend_is_served_with_spa_fallback(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.main import mount_frontend
+
+    (tmp_path / "index.html").write_text("<div id=root></div>", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    (tmp_path.parent / "secret.txt").write_text("x", encoding="utf-8")
+    web = FastAPI()
+    mount_frontend(web, str(tmp_path))
+    c = TestClient(web)
+
+    assert c.get("/assets/app.js").text == "console.log(1)"
+    assert "root" in c.get("/c/some-token").text  # 화면 주소로 바로 들어와도 index.html
+    assert c.get("/api/nope").status_code == 404  # 없는 API는 화면 대신 404
+    assert c.get("/assets/old-build.js").status_code == 404  # 재배포 후 예전 번들 요청
+    assert "root" in c.get("/../secret.txt").text  # 폴더 밖 파일은 내보내지 않음

@@ -22,7 +22,10 @@ class Settings:
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./allostar.db")
     jwt_secret: str = os.getenv("JWT_SECRET", DEV_JWT_SECRET)
     jwt_expire_minutes: int = _env_int("JWT_EXPIRE_MINUTES", 60 * 12)
-    frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    # 문자에 넣는 링크의 주소. Render는 서비스 주소를 RENDER_EXTERNAL_URL로 알려준다.
+    frontend_url: str = os.getenv("FRONTEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "http://localhost:5173"
+    # 빌드된 프론트엔드(dist) 경로. 지정하면 API 서버가 화면까지 함께 서빙한다(단일 컨테이너 배포).
+    static_dir: str = os.getenv("STATIC_DIR", "")
     integration_api_key: str = os.getenv("INTEGRATION_API_KEY", DEV_INTEGRATION_KEY)
     # 데모 모드: 데모 계정 바로 입장(비밀번호 없이)과 데모 키트 코드 안내를 켠다. 운영 배포 시 false.
     # 기본은 꺼짐(안전한 기본값). 실행 스크립트(dev.cmd/dev.sh)와 docker-compose에서만 켠다.

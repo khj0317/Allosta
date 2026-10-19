@@ -5,14 +5,15 @@
 ```mermaid
 flowchart LR
     subgraph Client["React SPA (Vite)"]
-        C1[고객 화면<br/>결과·예약·대기·알림]
+        C1[고객 화면<br/>결과·가족·예약·대기·알림·내 정보]
         C2[상담사 화면<br/>일정·상담 기록·슬롯]
-        C3[관리자 화면<br/>대시보드·전체 예약·슬롯]
+        C3[관리자 화면<br/>대시보드·전체 예약·슬롯·상담사 계정]
+        C4[문자 링크 화면<br/>로그인 없이 참석 응답]
     end
 
     subgraph API["FastAPI (단일 서비스, 모듈러 모놀리스)"]
-        R[Routers<br/>auth / customer / bookings / waitlist / staff / admin / integrations]
-        S[Domain Services<br/>booking · waitlist · record · metrics · notification]
+        R[Routers<br/>auth · account · customer · bookings · waitlist<br/>staff · admin · admin_counselors · public · integrations · demo]
+        S[Domain Services<br/>booking · waitlist · record · metrics · notification<br/>phone · family · account · credentials]
         SCH[Scheduler<br/>알림 발송 · 대기 제안 만료]
     end
 
@@ -22,6 +23,7 @@ flowchart LR
     LIMS[[분석 시스템 LIMS]]
 
     C1 & C2 & C3 -->|REST + JWT| R
+    C4 -->|"REST (1회용 링크 토큰)"| R
     R --> S --> DB
     SCH --> S
     SCH -->|outbox dispatch| SMS
@@ -51,8 +53,24 @@ backend/app
 ├── models.py            # 도메인 모델 + 불변식(인덱스/제약)
 ├── schemas.py           # API 입출력(Pydantic)
 ├── security.py          # 비밀번호 해시, JWT, 역할 가드, 연동 키
+├── constants.py         # 서비스 라벨, 관심사 표준 태그, 데모 계정
+├── seed.py              # 데모 데이터(가상 인물, 실행 날짜 기준)
 ├── routers/             # HTTP 계층: 인증/권한·직렬화만
-└── services/            # 도메인 규칙: booking, waitlist, record, metrics, notification, scheduler
+│   ├── auth.py          #   로그인·회원가입·휴대폰 인증·비밀번호 변경/찾기
+│   ├── account.py       #   회원 탈퇴
+│   ├── customer.py      #   피검자(본인·가족)·가족 인증·키트 연결·결과지
+│   ├── bookings.py · waitlist.py
+│   ├── staff.py         #   상담사/관리자: 일정·상담 기록·슬롯·대시보드
+│   ├── admin_counselors.py  # 상담사 계정 발급·비활성화
+│   ├── public.py        #   문자 링크 참석 응답(로그인 없음)
+│   ├── common.py        #   메타·제품·상담사·알림
+│   ├── integrations.py  #   주문 웹훅
+│   └── demo.py          #   데모 모드 전용(데모 입장·데모 키트·화면 안내)
+└── services/            # 도메인 규칙
+    ├── booking.py · waitlist.py · record.py · metrics.py
+    ├── notification.py · scheduler.py   # 아웃박스·발송·리마인더·제안 만료
+    ├── phone.py · family.py             # 휴대폰 인증, 가족 등록·키트 대조
+    └── account.py · credentials.py      # 회원 탈퇴, 비밀번호 확인·잠금
 ```
 
 라우터는 "누가 무엇을 요청했는가"(인증·소유권)만, 서비스는 "그 요청이 규칙상 가능한가"(상태 전이·정책)만 책임진다. 예를 들어 예약 취소 규칙은 `services/booking.cancel_booking` 한 곳에 있고, 고객 취소·관리자 운영 취소·일정 변경이 모두 이를 재사용한다.
@@ -81,12 +99,20 @@ erDiagram
     ORDERS ||--o{ ORDER_ITEMS : ""
     PRODUCTS ||--o{ ORDER_ITEMS : ""
     USERS ||--o{ NOTIFICATIONS : "receives"
+    USERS ||--o{ PHONE_VERIFICATIONS : "requests (가족 인증)"
+    USERS ||--o{ KIT_CLAIM_FAILURES : "fails"
+    CONSULTATION_RECORDS ||--o{ RECORD_REVISIONS : "revised"
 
     USERS {
         int id PK
         string email UK
         string role "CUSTOMER|COUNSELOR|ADMIN"
-        string phone
+        string phone UK "휴대폰 1개 = 계정 1개"
+        bool must_change_password
+        int failed_logins
+        datetime locked_until
+        int token_version "비밀번호 변경 시 증가"
+        datetime withdrawn_at "탈퇴(익명화)"
     }
     COUNSELORS {
         int id PK
@@ -97,7 +123,10 @@ erDiagram
     SUBJECTS {
         int id PK
         int owner_id FK
+        string name
+        date birth_date
         string relation "SELF|PARENT|…"
+        string phone "인증된 번호"
         datetime consent_at
     }
     TEST_RESULTS {
@@ -105,6 +134,9 @@ erDiagram
         string kit_code UK
         int subject_id FK "nullable(미연결)"
         string service_type
+        string registered_name "키트 접수 정보"
+        date registered_birth_date
+        string registered_phone
     }
     INDICATORS {
         int id PK
@@ -130,7 +162,10 @@ erDiagram
         string contact_phone
         json concern_tags
         datetime attendance_confirmed_at
+        datetime attendance_declined_at
+        string attendance_token_hash UK "문자 링크"
         int call_attempts
+        string cancel_reason
     }
     WAITLIST_ENTRIES {
         int id PK
@@ -182,6 +217,35 @@ erDiagram
         datetime scheduled_at
         string status "PENDING|SENT|FAILED|CANCELLED"
     }
+    PHONE_VERIFICATIONS {
+        int id PK
+        string phone "숫자만"
+        string purpose "SIGNUP|RESET|FAMILY"
+        int owner_id FK "FAMILY만"
+        string code_hash
+        string token_hash UK "1회용"
+        datetime expires_at
+        int attempts
+    }
+    SMS_SEND_LOGS {
+        int id PK
+        string phone
+        string purpose
+        datetime created_at "번호당 하루 상한"
+    }
+    KIT_CLAIM_FAILURES {
+        int id PK
+        int owner_id FK
+        datetime created_at "계정당 하루 상한"
+    }
+    RECORD_REVISIONS {
+        int id PK
+        int record_id FK
+        int editor_id FK
+        string reason
+        json changed_fields
+        json before "수정 전 전체"
+    }
 ```
 
 ### 모델링 결정과 근거
@@ -196,6 +260,9 @@ erDiagram
 | **내부 요약(summary)과 고객 메시지 분리** | 상담사가 "구매 의향 높음" 같은 내부 메모를 고객 노출 걱정 없이 적을 수 있어야 기록이 솔직해짐 |
 | **주문은 `external_order_id` 유니크** | 웹훅 재전송 시 중복 적재 방지(멱등) |
 | **알림을 테이블(아웃박스)로** | 아래 §4.6 |
+| **인증 기록은 용도별로 분리**(`purpose`) | 가입·비밀번호 재설정·가족 등록 인증을 한 테이블에 두되 용도를 나눠, 한 용도로 받은 인증을 다른 용도에 쓸 수 없게 함(가입용 토큰으로 남의 비밀번호 변경 차단). 코드·토큰은 해시로만 저장 |
+| **탈퇴는 행 삭제가 아니라 값 삭제** | 예약·기록·주문은 실적·전환율·정산의 근거라 외래키로 묶여 있음. 행을 지우면 과거 지표가 바뀌고, 주문은 법정 보존 대상. 그래서 신원·건강 정보 값만 지우고 시각·상태·금액만 남김(`withdrawn_at`) |
+| **로그인 토큰 세대(`token_version`)** | JWT는 서버가 따로 저장하지 않아 발급 후 끊을 수 없음. 계정에 세대 번호를 두고 토큰에 담아 매 요청 대조 → 비밀번호를 바꾸면 그 전 토큰 전부 무효. 세션 테이블 없이 해결 |
 | **시간은 KST naive 저장** | 국내 전화 상담만 다룸(가정 A5). 한국은 서머타임이 없어 고정 오프셋으로 충분. 다지역 확장 시 UTC 저장으로 전환 |
 
 ---
@@ -207,7 +274,7 @@ erDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> CONFIRMED: 예약 생성 / 대기 제안 수락 / 일정 변경(새 예약)
-    CONFIRMED --> CANCELLED: 고객 취소(시작 3h 전까지)\n운영 취소(사유 필수)\n일정 변경(기존 예약)
+    CONFIRMED --> CANCELLED: 고객 취소(시작 3h 전까지)\n운영 취소(사유 필수)\n일정 변경(기존 예약)\n회원 탈퇴
     CONFIRMED --> COMPLETED: 상담사 기록 제출(시작 이후)
     CONFIRMED --> NO_SHOW: 부재 처리(시작 이후 + 통화 시도 ≥ 1)
     CANCELLED --> [*]: 슬롯 반환 → 대기자 제안
@@ -217,6 +284,7 @@ stateDiagram-v2
 
 - 예약 확정을 별도 승인 단계 없이 **즉시 확정**으로 둔 이유: 수동 확인이 현재 문제의 원인이다. 슬롯 자체가 상담사가 연 시간이므로 추가 승인이 불필요.
 - `NO_SHOW`는 슬롯을 계속 점유한다(이미 지난 시간이므로 반환 의미 없음).
+- **회원 탈퇴** 시 예정 상담은 취소(빈자리는 대기자에게), 시간이 지났는데 처리 안 된 상담도 "회원 탈퇴"로 종료한다(탈퇴 후에는 처리·기록할 수 없어 처리 누락 목록에 영원히 남으므로). 3시간 안에 시작하는 상담이 있으면 탈퇴를 거부한다.
 - 부재 처리에 **통화 시도 ≥ 1회**를 요구: 상담사가 전화를 걸지 않고 노쇼 처리하는 것을 막아 노쇼율 지표의 신뢰도 확보.
 
 ### 대기(Waitlist)
@@ -229,8 +297,8 @@ stateDiagram-v2
     OFFERED --> WAITING: 거절(이 슬롯은 다시 제안 안 함)
     OFFERED --> EXPIRED: 미응답(유효시간 경과) → 다음 대기자에게 제안
     WAITING --> EXPIRED: 희망 날짜 경과
-    WAITING --> CANCELLED: 고객 취소
-    OFFERED --> CANCELLED: 고객 취소 → 다음 대기자
+    WAITING --> CANCELLED: 고객 취소·회원 탈퇴
+    OFFERED --> CANCELLED: 고객 취소·회원 탈퇴 → 다음 대기자
 ```
 
 ---
@@ -476,3 +544,19 @@ MVP는 조회 시점 계산(on-the-fly). 데이터가 커지면 일 단위 집�
 | 예약 시 고객이 고른 관심사를 기록 폼 기본값으로 | 상담사 입력 부담 감소 + 데이터 일관성 |
 | 서버 시간(KST naive)을 브라우저 TZ와 무관하게 파싱(`parseLocal`) | 해외 접속·서머타임 환경에서 시간이 밀리는 버그 방지 |
 | 라이트/다크 모드 토큰, 반응형(900px/600px) | 고객은 주로 문자 링크로 모바일 진입 |
+
+## 4.12 배포 구성
+
+| 방식 | 구성 | 용도 |
+|---|---|---|
+| **공개 데모 (Render)** | 저장소 최상위 `Dockerfile` 한 개: React를 빌드해 FastAPI가 화면까지 함께 서빙(`STATIC_DIR`). `render.yaml`(Blueprint)로 설정 | 평가자가 링크만으로 확인 |
+| `docker compose up` | 백엔드 + nginx(화면, `/api` 프록시) 2개 컨테이너, 데이터 볼륨 유지 | 로컬 재현 |
+| `dev.cmd` / `dev.sh` | 개발 서버 2개(자동 재시작) | 개발 |
+
+**설계 근거**
+- **공개 데모는 컨테이너 1개**: 무료 호스팅은 서비스 1개 단위가 간단하고, 화면과 API가 같은 주소라 CORS·프록시 설정이 필요 없다. 없는 화면 주소(`/c/…`, `/my/…`)는 `index.html`로, `/api/…`와 예전 번들 파일(`/assets/…`)은 404로 돌려준다.
+- **비밀키는 호스팅이 생성**(`generateValue`): 저장소에 공개된 개발용 키를 쓰지 않는다.
+- **재시작 때마다 데모 데이터 재생성**(`SEED_ON_START=always`): 무료 플랜은 디스크가 없어 어차피 초기화되고, 날짜가 항상 오늘 기준이 되어 "오늘 일정"·"마감된 날" 시연이 깨지지 않는다.
+- **공용 데모 계정 보호**: 공개 주소에서는 누구나 같은 데모 계정으로 들어오므로, 데모 모드에서 공용 계정의 비밀번호 변경·재설정, 탈퇴, 데모 상담사 비활성화를 막는다(한 사람이 바꾸면 다른 평가자의 시연이 깨짐). 비밀번호 찾기 시연은 전용 계정(`forgot@allostar.kr`)으로 한다.
+- 문자에 들어가는 링크 주소는 `FRONTEND_URL`, 없으면 Render가 주는 `RENDER_EXTERNAL_URL`을 쓴다.
+- 운영 배포 시에는 `DEMO_MODE=false`, PostgreSQL(`DATABASE_URL`), 스케줄러 워커 분리(§4.10)로 바꾼다.

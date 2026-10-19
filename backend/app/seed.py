@@ -165,6 +165,8 @@ def _user(db: Session, email: str, name: str, role: Role, phone: str | None = No
 
 
 # 시드에서 가족으로 등록하지 않은 데모 아버지. 화면의 데모 안내(/api/demo/hints)로 채워 넣을 수 있다.
+# 비밀번호 찾기 시연용 계정(누가 비밀번호를 바꿔도 다른 시연에 영향 없음). 화면의 데모 안내로 채워 넣는다.
+DEMO_RESET_ACCOUNT = {"email": "forgot@allostar.kr", "phone": "010-1234-0001"}
 DEMO_DAD = {"name": "홍판서", "relation": Relation.PARENT, "birth_date": date(1960, 1, 22), "phone": "010-3456-7890"}
 
 
@@ -196,7 +198,11 @@ def seed(db: Session) -> None:
     # ---- 데모 고객(가상 인물 홍길동): 본인 결과 2종 + 어머니(가족 등록 완료).
     #      아버지(홍판서)는 아직 가족 등록 전 → '가족 추가 → 인증 → 키트 연결' 시연용
     demo = _user(db, "customer@allostar.kr", "홍길동", Role.CUSTOMER, "010-1234-5678")
+    # 비밀번호 찾기 시연용(가상 인물 흥부). 공용 데모 계정은 비밀번호를 바꿀 수 없게 막아 두어서 따로 둔다.
+    forgot = _user(db, DEMO_RESET_ACCOUNT["email"], "흥부", Role.CUSTOMER, DEMO_RESET_ACCOUNT["phone"])
     db.flush()
+    db.add(Subject(owner_id=forgot.id, name="흥부", birth_date=date(1985, 5, 5), relation=Relation.SELF,
+                   phone=forgot.phone, consent_at=t))
     me = Subject(owner_id=demo.id, name="홍길동", birth_date=date(1990, 3, 1), relation=Relation.SELF,
                  phone=demo.phone, consent_at=t)
     mom = Subject(owner_id=demo.id, name="성춘향", birth_date=date(1962, 9, 3), relation=Relation.PARENT,

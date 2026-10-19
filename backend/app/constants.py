@@ -1,4 +1,20 @@
-from .models import ServiceType
+from .config import settings
+from .models import Role, ServiceType
+
+# 시연용 데모 계정(데모 모드의 '회원가입 없이 둘러보기'가 이 계정으로 들어간다)
+DEMO_ACCOUNTS = {
+    Role.CUSTOMER: "customer@allostar.kr",
+    Role.COUNSELOR: "counselor1@allostar.kr",
+    Role.ADMIN: "admin@allostar.kr",
+}
+
+
+def is_protected_demo_account(email: str) -> bool:
+    """공개 데모 주소에서 한 사람이 데모 계정을 바꿔 다른 평가자의 시연을 깨뜨리지 못하게 보호할 계정인가.
+
+    데모 모드에서만 해당한다(비밀번호 변경·재설정, 탈퇴, 상담사 비활성화를 막음). 데이터는 재시작 시 시드로 초기화된다.
+    """
+    return settings.demo_mode and email in DEMO_ACCOUNTS.values()
 
 SERVICE_LABELS = {
     ServiceType.METABOLIC: "종합 대사 분석",

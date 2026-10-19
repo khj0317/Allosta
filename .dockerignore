@@ -1,0 +1,10 @@
+.git
+.dev-logs
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/dist
+**/*.db
+**/*.db-*
+docs/screenshots

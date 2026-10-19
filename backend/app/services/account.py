@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..constants import is_protected_demo_account
 from ..db import now
 from ..errors import AppError
 from ..models import (
@@ -47,8 +48,6 @@ from . import waitlist as waitlist_service
 from .phone import digits
 
 WITHDRAWN_NAME = "탈퇴회원"
-# 데모 시연용 계정은 탈퇴하면 다른 평가자가 시연할 수 없게 되므로 막는다(새로 가입한 계정으로 시험)
-DEMO_EMAILS = {"customer@allostar.kr"}
 
 
 def _upcoming(db: Session, user: User) -> list[Booking]:
@@ -98,7 +97,8 @@ def preview(db: Session, user: User) -> dict:
 
 
 def _blocked_reason(user: User, imminent: list[Booking]) -> str | None:
-    if settings.demo_mode and user.email in DEMO_EMAILS:
+    # 시연용 데모 계정은 탈퇴하면 다른 평가자가 시연할 수 없게 되므로 막는다(새로 가입한 계정으로 시험)
+    if is_protected_demo_account(user.email):
         return "시연용 데모 계정은 탈퇴할 수 없습니다. 새로 가입한 계정으로 시험해주세요."
     if imminent:
         return (

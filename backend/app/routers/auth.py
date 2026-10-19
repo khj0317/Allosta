@@ -5,6 +5,7 @@ from ..db import now
 from ..errors import AppError
 from ..models import Relation, Role, Subject, User
 from ..config import settings
+from ..constants import is_protected_demo_account
 from ..schemas import (
     LoginIn,
     PasswordChangeIn,
@@ -22,6 +23,8 @@ from ..services import credentials
 from ..services import phone as phone_svc
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+DEMO_ACCOUNT_MESSAGE = "시연용 데모 계정의 비밀번호는 바꿀 수 없습니다. 새로 가입한 계정으로 시험해주세요."
 
 
 def to_user_out(user: User) -> UserOut:
@@ -59,6 +62,8 @@ def reset_send(body: ResetSendIn, db: DbSession):
     이메일·번호가 맞지 않아도 같은 응답을 돌려줘 가입 여부를 알 수 없게 한다(문자는 실제 계정 번호로만 감).
     """
     user = _reset_target(db, body.email, body.phone)
+    if user and is_protected_demo_account(user.email):
+        raise AppError(403, "DEMO_ACCOUNT", DEMO_ACCOUNT_MESSAGE)
     code = phone_svc.send(db, user.phone, phone_svc.RESET) if user else None
     return {"sent": True, "demo_code": code if settings.demo_mode else None}
 
@@ -76,6 +81,8 @@ def reset_password(body: ResetIn, db: DbSession):
     user = _reset_target(db, body.email, body.phone)
     if user is None:
         raise AppError(400, "PHONE_NOT_VERIFIED", "휴대폰 인증을 먼저 완료해주세요.")
+    if is_protected_demo_account(user.email):
+        raise AppError(403, "DEMO_ACCOUNT", DEMO_ACCOUNT_MESSAGE)
     phone_svc.consume_token(db, body.phone, body.reset_token, phone_svc.RESET)
     user.password_hash = hash_password(body.new_password)
     user.must_change_password = False
@@ -93,6 +100,8 @@ def change_password(body: PasswordChangeIn, user: CurrentUser, db: DbSession):
     현재 비밀번호 확인은 로그인과 같은 실패 횟수로 잠근다(훔친 토큰으로 대입 방지).
     바꾸면 다른 기기의 로그인은 모두 끊기고, 지금 기기에는 새 토큰을 내려준다.
     """
+    if is_protected_demo_account(user.email):
+        raise AppError(403, "DEMO_ACCOUNT", DEMO_ACCOUNT_MESSAGE)
     credentials.check_password(db, user, body.current_password, status=400, code="WRONG_PASSWORD",
                                message="현재 비밀번호가 올바르지 않습니다.")
     if body.current_password == body.new_password:

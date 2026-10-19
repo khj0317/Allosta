@@ -94,7 +94,7 @@ export function ForgotPassword() {
           {hints?.reset && !sent && (
             <div className="alert alert-info">
               <div>
-                데모 환경이라 실제 문자는 발송되지 않고, 인증번호를 화면에 보여드려요. 데모 고객 계정({hints.reset.email} ·{' '}
+                데모 환경이라 실제 문자는 발송되지 않고, 인증번호를 화면에 보여드려요. 비밀번호 찾기 시연용 계정({hints.reset.email} ·{' '}
                 {hints.reset.phone})으로 시연할 수 있어요.
               </div>
               <button

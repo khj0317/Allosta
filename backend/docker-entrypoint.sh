@@ -7,4 +7,5 @@ if [ "$SEED_ON_START" = "always" ] || [ ! -f "$DB_FILE" ]; then
     python -m app.seed
 fi
 
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+# PORT: 호스팅 서비스(Render 등)가 지정하는 포트. 없으면 8000
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"

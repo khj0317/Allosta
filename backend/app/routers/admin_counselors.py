@@ -9,6 +9,7 @@ import string
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
+from ..constants import is_protected_demo_account
 from ..db import now
 from ..errors import AppError, not_found
 from ..models import Booking, BookingStatus, Counselor, Role, Slot, User
@@ -81,6 +82,8 @@ def update_counselor(counselor_id: int, body: CounselorPatchIn, user: AdminUser,
     c = db.get(Counselor, counselor_id)
     if c is None:
         raise not_found("상담사")
+    if body.active is False and c.active and is_protected_demo_account(c.user.email):
+        raise AppError(403, "DEMO_ACCOUNT", "시연용 데모 상담사는 비활성화할 수 없습니다. 새로 발급한 상담사로 시험해주세요.")
     if body.active is False and c.active:
         # 예정 상담이 남은 채로 비활성화하면 고객은 예약을 믿고 기다리는데 전화할 사람이 없어진다
         upcoming = _upcoming(db, c.id)

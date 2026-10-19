@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .config import DEV_INTEGRATION_KEY, DEV_JWT_SECRET, Settings, settings
 from .db import Base, engine
@@ -80,3 +82,32 @@ for r in (
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+def mount_frontend(application: FastAPI, static_dir: str) -> None:
+    """빌드된 React 앱을 같은 서버에서 서빙한다(단일 컨테이너 배포용).
+
+    /api·/docs는 위에서 먼저 등록된 라우트가 처리하고, 나머지 경로는 파일이 있으면 그 파일,
+    없으면 index.html을 돌려준다(새로고침·문자 링크로 /c/... 같은 화면 주소에 바로 들어와도 동작).
+    """
+    root = Path(static_dir).resolve()
+    index = root / "index.html"
+    if not index.is_file():
+        log.warning("STATIC_DIR=%s 에 index.html이 없어 화면 서빙을 건너뜁니다.", static_dir)
+        return
+
+    @application.get("/{path:path}", include_in_schema=False)
+    def spa(path: str):
+        if path.startswith("api/"):
+            raise HTTPException(404)
+        target = (root / path).resolve()
+        if path and target.is_file() and root in target.parents:
+            return FileResponse(target)
+        if path.startswith("assets/"):
+            # 재배포 후 예전 번들 파일을 요청하면 화면(HTML) 대신 404 → 브라우저가 스크립트 오류로 헷갈리지 않게
+            raise HTTPException(404)
+        return FileResponse(index)
+
+
+if settings.static_dir:
+    mount_frontend(app, settings.static_dir)

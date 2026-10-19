@@ -47,3 +47,20 @@ def test_withdrawal_password_failures_share_the_login_counter(client, f):
     for _ in range(2):
         res = client.post("/api/auth/login", json={"email": u.email, "password": "guess000"})
     assert res.json()["detail"]["code"] == "ACCOUNT_LOCKED"  # 탈퇴 화면 3회 + 로그인 2회 = 5회
+
+
+def test_shared_demo_accounts_are_protected_in_demo_mode(client, f, db):
+    """공개 데모 주소에서 한 사람이 데모 계정을 바꿔 다른 평가자의 시연을 깨뜨리지 못한다."""
+    from app.models import Counselor, Role
+
+    customer = f.user()
+    customer.email = "customer@allostar.kr"
+    c = f.counselor()
+    c.user.email = "counselor1@allostar.kr"
+    db.commit()
+    assert _change(client, auth(customer), "pw").json()["detail"]["code"] == "DEMO_ACCOUNT"
+    sent = client.post("/api/auth/password-reset/send", json={"email": customer.email, "phone": customer.phone})
+    assert sent.json()["detail"]["code"] == "DEMO_ACCOUNT"
+    res = client.patch(f"/api/admin/counselors/{c.id}", json={"active": False}, headers=auth(f.user(Role.ADMIN)))
+    assert res.json()["detail"]["code"] == "DEMO_ACCOUNT"
+    assert db.get(Counselor, c.id).active
