@@ -93,6 +93,25 @@ class PhoneVerifyIn(BaseModel):
     code: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{6}$")]
 
 
+class ResetSendIn(BaseModel):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, min_length=3)]
+    phone: Phone
+
+
+class ResetVerifyIn(ResetSendIn):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[0-9]{6}$")]
+
+
+class ResetIn(ResetSendIn):
+    reset_token: str
+    new_password: Password
+
+    @field_validator("new_password")
+    @classmethod
+    def _policy(cls, v: str) -> str:
+        return _password_policy(v)
+
+
 class DemoSessionIn(BaseModel):
     role: Role
 

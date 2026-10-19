@@ -14,6 +14,7 @@ import { Notifications } from './pages/customer/Notifications';
 import { ResultView } from './pages/customer/ResultView';
 import { Attendance } from './pages/Attendance';
 import { ChangePassword } from './pages/ChangePassword';
+import { ForgotPassword } from './pages/ForgotPassword';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ConsultWorkspace } from './pages/staff/ConsultWorkspace';
@@ -46,6 +47,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/password" element={<ChangePassword />} />
+          <Route path="/forgot" element={<ForgotPassword />} />
           {/* 문자 링크: 로그인 없이 참석 응답 */}
           <Route path="/c/:token" element={<Attendance />} />
           <Route path="/" element={<Home />} />

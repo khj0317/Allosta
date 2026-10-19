@@ -97,6 +97,8 @@ export function Login() {
       footer={
         <>
           처음이신가요? <Link to="/signup">회원가입</Link>
+          <span className="sep" aria-hidden="true">·</span>
+          <Link to="/forgot">비밀번호 찾기</Link>
         </>
       }
       extra={

@@ -403,3 +403,20 @@ label > .hint { margin-top: -2px; }
 .attend-q { font-weight: 700; font-size: 16px; margin: 4px 0 4px; }
 .attend-actions { display: flex; flex-direction: column; gap: 0; margin-bottom: 12px; }
 .attend-actions .btn-block { margin-top: 10px; }
+.nav-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.auth-switch .sep { margin: 0 8px; color: var(--line-strong); }
+
+/* ---------- 대시보드: 단계별 흐름 */
+.funnel { list-style: none; margin: 0; padding: 0; }
+.funnel-step { display: grid; grid-template-columns: 210px 1fr 170px; gap: 16px; align-items: center; padding: 10px 0; }
+.funnel-step + .funnel-step { border-top: 1px solid var(--line); }
+.funnel-label { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.funnel-track { height: 14px; background: var(--surface-2); border-radius: 0 4px 4px 0; }
+.funnel-fill { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
+.funnel-num { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.funnel-num strong { font-size: 18px; }
+.funnel-note { margin: 16px 0 0; padding-top: 14px; border-top: 1px dashed var(--line-strong); font-size: 13px; color: var(--ink-2); }
+@media (max-width: 700px) {
+  .funnel-step { grid-template-columns: 1fr auto; }
+  .funnel-track { grid-column: 1 / -1; grid-row: 2; }
+}

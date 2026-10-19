@@ -61,6 +61,11 @@ function Body({ d }: { d: D }) {
         <Kpi label="대기 후 예약 전환" value={pct(d.waitlist.recovery_rate)} note={`대기 ${d.waitlist.total}건 중 ${d.waitlist.booked}건 예약`} />
       </div>
 
+      <Card title="어디서 새는가 · 단계별 흐름" actions={<span className="small muted">상담 시간이 지난 예약 기준</span>}>
+        <Funnel steps={d.funnel} />
+        <AttendanceEffect e={d.attendance_effect} />
+      </Card>
+
       <Card title="일별 상담 결과">
         <DailyChart daily={d.daily} />
       </Card>
@@ -128,6 +133,51 @@ function Body({ d }: { d: D }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * 단계별 흐름. 각 단계는 앞 단계에 포함되므로, 막대가 줄어드는 만큼이 그 단계에서 빠진 고객이다.
+ * 한 가지 크기(인원)를 단계별로 비교하는 차트라 단일 색 + 직접 라벨로 표시한다.
+ */
+function Funnel({ steps }: { steps: D['funnel'] }) {
+  const top = steps[0]?.count || 0;
+  if (!top) return <p className="empty">아직 지난 상담이 없습니다.</p>;
+  return (
+    <ol className="funnel">
+      {steps.map((s, i) => {
+        const prev = i > 0 ? steps[i - 1].count : s.count;
+        return (
+          <li key={s.key} className="funnel-step">
+            <div className="funnel-label">
+              <strong>{s.label}</strong>
+              {s.drop && s.drop.count > 0 && (
+                <span className="small muted">
+                  {s.drop.label} {s.drop.count}건 이탈
+                </span>
+              )}
+            </div>
+            <div className="funnel-track" aria-hidden="true">
+              <div className="funnel-fill" style={{ width: `${Math.max(1, (s.count / top) * 100)}%` }} />
+            </div>
+            <div className="funnel-num">
+              <strong>{s.count}</strong>
+              <span className="small muted">{i === 0 ? '100%' : `${pct(s.count / top)} · 앞 단계의 ${pct(prev ? s.count / prev : null)}`}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function AttendanceEffect({ e }: { e: D['attendance_effect'] }) {
+  if (e.confirmed_no_show_rate === null || e.unconfirmed_no_show_rate === null) return null;
+  return (
+    <p className="funnel-note">
+      리마인더에서 <strong>참석을 확인한 예약의 부재율 {pct(e.confirmed_no_show_rate)}</strong>(n={e.confirmed}) ·
+      확인하지 않은 예약 {pct(e.unconfirmed_no_show_rate)}(n={e.unconfirmed}). 미확인 예약은 상담 전에 한 번 더 연락하면 부재를 줄일 수 있습니다.
+    </p>
   );
 }
 

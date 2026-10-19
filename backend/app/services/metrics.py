@@ -190,6 +190,36 @@ def dashboard(db: Session, date_from: date, date_to: date) -> dict:
     slot_total = db.query(Slot).filter(Slot.start_at >= start, Slot.start_at < end, Slot.status == "OPEN").count()
     used = sum(b.status != BookingStatus.CANCELLED for b in bookings)
 
+    # 단계별 이탈 흐름: 시간이 이미 지난 예약만(앞으로 있을 예약을 넣으면 완료가 적게 보임).
+    # 단계는 서로 포함 관계 → 각 단계에서 얼마나 빠지는지가 곧 '어디서 새는지'다.
+    ended = [b for b in bookings if b.slot.end_at <= t]
+    kept = [b for b in ended if b.status != BookingStatus.CANCELLED]
+    done_ = [b for b in kept if b.status == BookingStatus.COMPLETED]
+    recommended = [b for b in done_ if b.record and b.record.recommendations]
+    bought = [b for b in recommended if b.id in converted_rec]
+    funnel = [
+        {"key": "booked", "label": "예약", "count": len(ended), "drop": None},
+        {"key": "kept", "label": "취소 없이 상담일 도래", "count": len(kept),
+         "drop": {"label": "취소", "count": len(ended) - len(kept)}},
+        {"key": "completed", "label": "상담 완료", "count": len(done_),
+         "drop": {"label": "부재 · 처리 누락",
+                  "count": len(kept) - len(done_)}},
+        {"key": "recommended", "label": "제품 추천", "count": len(recommended),
+         "drop": {"label": "추천 없음", "count": len(done_) - len(recommended)}},
+        {"key": "purchased", "label": "추천 제품 구매", "count": len(bought),
+         "drop": {"label": f"{settings.attribution_days}일 내 미구매", "count": len(recommended) - len(bought)}},
+    ]
+    # 리마인더 효과: 참석 확인 여부에 따른 부재율
+    held_ = [b for b in kept if b.status in (BookingStatus.COMPLETED, BookingStatus.NO_SHOW)]
+    confirmed = [b for b in held_ if b.attendance_confirmed_at]
+    unconfirmed = [b for b in held_ if not b.attendance_confirmed_at]
+    attendance_effect = {
+        "confirmed_no_show_rate": _rate(sum(b.status == BookingStatus.NO_SHOW for b in confirmed), len(confirmed)),
+        "unconfirmed_no_show_rate": _rate(sum(b.status == BookingStatus.NO_SHOW for b in unconfirmed), len(unconfirmed)),
+        "confirmed": len(confirmed),
+        "unconfirmed": len(unconfirmed),
+    }
+
     return {
         "period": {"from": date_from.isoformat(), "to": date_to.isoformat()},
         "attribution_days": settings.attribution_days,
@@ -199,4 +229,6 @@ def dashboard(db: Session, date_from: date, date_to: date) -> dict:
         "top_concerns": top_concerns,
         "daily": [{"date": k, **v} for k, v in daily.items()],
         "waitlist": waitlist,
+        "funnel": funnel,
+        "attendance_effect": attendance_effect,
     }

@@ -228,6 +228,8 @@ class PhoneVerification(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(String(20), index=True)  # 숫자만
+    # SIGNUP(가입) / RESET(비밀번호 재설정): 한 용도로 받은 인증을 다른 용도에 쓸 수 없다
+    purpose: Mapped[str] = mapped_column(String(10), default="SIGNUP")
     code_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)

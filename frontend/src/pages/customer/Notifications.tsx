@@ -1,10 +1,14 @@
 import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import { fmtDateTime } from '../../format';
+import { NOTIFICATIONS_CHANGED } from '../../components/Layout';
 import { Card, Empty, ErrorBox, Spinner, useAsync } from '../../components/ui';
 
 export function Notifications() {
-  const { data, error, reload } = useAsync(api.notifications);
+  const { data, error, reload: load } = useAsync(api.notifications);
+  // 읽음 처리 후 목록과 상단 개수를 함께 갱신
+  const reload = () => load().then(() => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED)));
+  const unread = data?.filter((n) => !n.read_at).length ?? 0;
   return (
     <>
       <div className="page-head">
@@ -13,6 +17,11 @@ export function Notifications() {
           <h1>알림</h1>
           <p className="sub">문자(알림톡)로 보내드린 내용을 여기서도 확인할 수 있어요.</p>
         </div>
+        {unread > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => api.readAllNotifications().then(reload)}>
+            모두 읽음 ({unread})
+          </button>
+        )}
       </div>
       <ErrorBox error={error} />
       {!data ? (

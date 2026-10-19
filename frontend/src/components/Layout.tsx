@@ -1,5 +1,28 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../api';
 import { useAuth } from '../auth';
+
+/** 알림을 읽었을 때 상단 개수를 바로 갱신하도록 보내는 이벤트 */
+export const NOTIFICATIONS_CHANGED = 'allostar:notifications-changed';
+
+/** 고객 상단 메뉴 '알림' 옆 안 읽은 개수. 화면 이동·알림 읽음·1분마다 갱신. */
+function useUnreadCount(enabled: boolean) {
+  const [count, setCount] = useState(0);
+  const location = useLocation();
+  useEffect(() => {
+    if (!enabled) return;
+    const load = () => api.unreadCount().then((r) => setCount(r.count)).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    window.addEventListener(NOTIFICATIONS_CHANGED, load);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener(NOTIFICATIONS_CHANGED, load);
+    };
+  }, [enabled, location.pathname]);
+  return count;
+}
 
 const NAV = {
   CUSTOMER: [
@@ -25,6 +48,7 @@ const ROLE_LABEL = { CUSTOMER: '고객', COUNSELOR: '상담사', ADMIN: '운영 
 export function Layout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const unread = useUnreadCount(user?.role === 'CUSTOMER');
   if (!user) return null;
   return (
     <div className="shell">
@@ -39,6 +63,9 @@ export function Layout() {
             {NAV[user.role].map((n) => (
               <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : false} className="nav-link">
                 {n.label}
+                {n.to === '/my/notifications' && unread > 0 && (
+                  <span className="nav-count" aria-label={`안 읽은 알림 ${unread}개`}>{unread > 99 ? '99+' : unread}</span>
+                )}
               </NavLink>
             ))}
           </nav>

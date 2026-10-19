@@ -6,7 +6,18 @@ from ..db import now
 from ..errors import AppError
 from ..models import Relation, Role, Subject, User
 from ..config import settings
-from ..schemas import LoginIn, PasswordChangeIn, PhoneSendIn, PhoneVerifyIn, SignupIn, TokenOut, UserOut
+from ..schemas import (
+    LoginIn,
+    PasswordChangeIn,
+    PhoneSendIn,
+    PhoneVerifyIn,
+    ResetIn,
+    ResetSendIn,
+    ResetVerifyIn,
+    SignupIn,
+    TokenOut,
+    UserOut,
+)
 from ..security import CurrentUser, DbSession, create_token, hash_password, verify_password
 from ..services import phone as phone_svc
 
@@ -49,6 +60,45 @@ def login(body: LoginIn, db: DbSession):
     user.locked_until = None
     db.commit()
     return TokenOut(access_token=create_token(user), user=to_user_out(user))
+
+
+def _reset_target(db, email: str, phone: str) -> User | None:
+    """이메일과 가입 휴대폰이 모두 맞는 계정. 하나라도 다르면 None(어느 쪽이 틀렸는지는 알려주지 않음)."""
+    user = db.query(User).filter_by(email=email).one_or_none()
+    return user if user and phone_svc.same_phone(user.phone, phone) else None
+
+
+@router.post("/password-reset/send")
+def reset_send(body: ResetSendIn, db: DbSession):
+    """비밀번호 찾기 1단계: 가입한 휴대폰으로 인증번호 발송.
+
+    이메일·번호가 맞지 않아도 같은 응답을 돌려줘 가입 여부를 알 수 없게 한다(문자는 실제 계정 번호로만 감).
+    """
+    user = _reset_target(db, body.email, body.phone)
+    code = phone_svc.send(db, user.phone, phone_svc.RESET) if user else None
+    return {"sent": True, "demo_code": code if settings.demo_mode else None}
+
+
+@router.post("/password-reset/verify")
+def reset_verify(body: ResetVerifyIn, db: DbSession):
+    if _reset_target(db, body.email, body.phone) is None:
+        raise AppError(400, "CODE_MISMATCH", "인증번호가 일치하지 않습니다.")
+    return {"reset_token": phone_svc.verify(db, body.phone, body.code, phone_svc.RESET)}
+
+
+@router.post("/password-reset")
+def reset_password(body: ResetIn, db: DbSession):
+    """비밀번호 찾기 3단계: 휴대폰 인증 토큰으로 새 비밀번호 설정. 잠금도 함께 풀린다."""
+    user = _reset_target(db, body.email, body.phone)
+    if user is None:
+        raise AppError(400, "PHONE_NOT_VERIFIED", "휴대폰 인증을 먼저 완료해주세요.")
+    phone_svc.consume_token(db, body.phone, body.reset_token, phone_svc.RESET)
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    user.failed_logins = 0
+    user.locked_until = None
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/password", response_model=UserOut)

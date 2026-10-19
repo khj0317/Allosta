@@ -58,38 +58,50 @@ def record_sms_send(db: Session, phone: str, purpose: str) -> None:
     db.add(SmsSendLog(phone=d, purpose=purpose))
 
 
-def send(db: Session, phone: str) -> str:
-    d = digits(phone)
-    if phone_taken(db, d):
-        raise AppError(409, "PHONE_TAKEN", "이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
-    last = db.scalars(
-        select(PhoneVerification).where(PhoneVerification.phone == d).order_by(PhoneVerification.id.desc())
+SIGNUP = "SIGNUP"
+RESET = "RESET"  # 비밀번호 재설정
+
+
+def _latest(db: Session, d: str, purpose: str) -> PhoneVerification | None:
+    return db.scalars(
+        select(PhoneVerification)
+        .where(PhoneVerification.phone == d, PhoneVerification.purpose == purpose)
+        .order_by(PhoneVerification.id.desc())
     ).first()
+
+
+def send(db: Session, phone: str, purpose: str = SIGNUP) -> str:
+    """인증번호 발송. 용도(가입/재설정)별로 따로 관리해 한 용도의 인증을 다른 용도에 쓸 수 없게 한다."""
+    d = digits(phone)
+    if purpose == SIGNUP and phone_taken(db, d):
+        raise AppError(409, "PHONE_TAKEN", "이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
+    last = _latest(db, d, purpose)
     if last and now() - last.created_at < timedelta(seconds=settings.family_code_resend_seconds):
         raise AppError(429, "TOO_SOON", "잠시 후 다시 요청해주세요.")
-    record_sms_send(db, phone, "SIGNUP")
+    record_sms_send(db, phone, purpose)
     code = f"{secrets.randbelow(1_000_000):06d}"
     db.add(
         PhoneVerification(
             phone=d,
+            purpose=purpose,
             code_hash=_h(f"{d}:{code}"),
             expires_at=now() + timedelta(minutes=settings.family_code_minutes),
         )
     )
     db.commit()
+    label = "비밀번호 재설정" if purpose == RESET else "휴대폰 인증"
     notification.sms_sender.send(
         phone,
-        "[알로스타] 휴대폰 인증",
-        f"인증번호 {code} 를 입력해주세요. ({settings.family_code_minutes}분 이내)",
+        f"[알로스타] {label}",
+        f"인증번호 {code} 를 입력해주세요. ({settings.family_code_minutes}분 이내)"
+        + ("\n본인이 요청하지 않았다면 이 문자를 무시하세요." if purpose == RESET else ""),
     )
     return code
 
 
-def verify(db: Session, phone: str, code: str) -> str:
+def verify(db: Session, phone: str, code: str, purpose: str = SIGNUP) -> str:
     d = digits(phone)
-    v = db.scalars(
-        select(PhoneVerification).where(PhoneVerification.phone == d).order_by(PhoneVerification.id.desc())
-    ).first()
+    v = _latest(db, d, purpose)
     if v is None or v.expires_at < now():
         raise AppError(400, "CODE_EXPIRED", "인증번호가 만료되었습니다. 다시 받아주세요.")
     if v.attempts >= settings.family_code_max_attempts:
@@ -107,9 +119,9 @@ def verify(db: Session, phone: str, code: str) -> str:
     return token
 
 
-def consume_token(db: Session, phone: str, token: str) -> None:
-    """가입 요청의 phone_token 검증. 그 번호로 확인된, 만료·사용 전 토큰이어야 한다."""
+def consume_token(db: Session, phone: str, token: str, purpose: str = SIGNUP) -> None:
+    """인증 후 발급한 일회용 토큰 검증. 그 번호·그 용도로 확인된, 만료·사용 전 토큰이어야 한다."""
     v = db.scalars(select(PhoneVerification).where(PhoneVerification.token_hash == _h(token or ""))).first()
-    if v is None or v.phone != digits(phone) or v.used_at is not None or v.expires_at < now():
+    if v is None or v.phone != digits(phone) or v.purpose != purpose or v.used_at is not None or v.expires_at < now():
         raise AppError(400, "PHONE_NOT_VERIFIED", "휴대폰 인증을 먼저 완료해주세요.")
     v.used_at = now()

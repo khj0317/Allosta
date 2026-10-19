@@ -283,6 +283,15 @@ export interface Dashboard {
   top_concerns: { tag: string; count: number; conversion_rate: number | null }[];
   daily: { date: string; booked: number; completed: number; no_show: number; cancelled: number }[];
   waitlist: { total: number; booked: number; waiting: number; expired: number; recovery_rate: number | null };
+  /** 시간이 지난 예약 기준 단계별 흐름(포함 관계) */
+  funnel: { key: string; label: string; count: number; drop: { label: string; count: number } | null }[];
+  /** 참석 확인 여부에 따른 부재율(리마인더 효과) */
+  attendance_effect: {
+    confirmed_no_show_rate: number | null;
+    unconfirmed_no_show_rate: number | null;
+    confirmed: number;
+    unconfirmed: number;
+  };
 }
 
 // ---------------------------------------------------------------- client
@@ -357,6 +366,14 @@ export const api = {
     request<{ phone_token: string }>('POST', '/api/auth/phone/verify', { phone, code }),
   signup: (body: SignupInput) => request<{ access_token: string; user: User }>('POST', '/api/auth/signup', body),
   me: () => request<User>('GET', '/api/auth/me'),
+  resetSend: (email: string, phone: string) =>
+    request<{ sent: boolean; demo_code: string | null }>('POST', '/api/auth/password-reset/send', { email, phone }),
+  resetVerify: (email: string, phone: string, code: string) =>
+    request<{ reset_token: string }>('POST', '/api/auth/password-reset/verify', { email, phone, code }),
+  resetPassword: (email: string, phone: string, reset_token: string, new_password: string) =>
+    request<{ ok: boolean }>('POST', '/api/auth/password-reset', { email, phone, reset_token, new_password }),
+  unreadCount: () => request<{ count: number }>('GET', '/api/notifications/unread-count'),
+  readAllNotifications: () => request<{ read: number }>('POST', '/api/notifications/read-all'),
   changePassword: (current_password: string, new_password: string) =>
     request<User>('POST', '/api/auth/password', { current_password, new_password }),
   adminCounselors: () => request<CounselorAdmin[]>('GET', '/api/admin/counselors'),

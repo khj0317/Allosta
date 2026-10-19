@@ -36,6 +36,30 @@ def counselors(db: DbSession):
     ]
 
 
+def _in_app_sent(user):
+    return (
+        Notification.user_id == user.id,
+        Notification.channel == NotificationChannel.IN_APP,
+        Notification.status == NotificationStatus.SENT,
+    )
+
+
+@router.get("/notifications/unread-count")
+def unread_count(user: CurrentUser, db: DbSession):
+    """상단 메뉴의 안 읽은 알림 개수."""
+    return {"count": db.query(Notification).filter(*_in_app_sent(user), Notification.read_at.is_(None)).count()}
+
+
+@router.post("/notifications/read-all")
+def read_all(user: CurrentUser, db: DbSession):
+    n = 0
+    for row in db.query(Notification).filter(*_in_app_sent(user), Notification.read_at.is_(None)):
+        row.read_at = now()
+        n += 1
+    db.commit()
+    return {"read": n}
+
+
 @router.get("/notifications/me", response_model=list[NotificationOut])
 def my_notifications(user: CurrentUser, db: DbSession):
     return db.scalars(
