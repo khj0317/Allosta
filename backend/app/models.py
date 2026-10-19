@@ -249,6 +249,17 @@ class SmsSendLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class KitClaimFailure(Base):
+    """키트 연결 실패 기록. 순번 형식 키트 코드를 대입해 보는 시도를 계정당 하루 횟수로 제한한다."""
+
+    __tablename__ = "kit_claim_failures"
+    __table_args__ = (Index("ix_kit_fail_owner_time", "owner_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Slot(Base):
     __tablename__ = "slots"
     __table_args__ = (UniqueConstraint("counselor_id", "start_at", name="uq_slot_counselor_start"),)

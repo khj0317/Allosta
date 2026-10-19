@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import now
 from ..errors import AppError, not_found
-from ..models import Booking, Relation, Subject, TestResult, User
+from ..models import Booking, KitClaimFailure, Relation, Subject, TestResult, User
 from . import notification
 from .phone import normalize, record_sms_send, same_phone
 
@@ -143,18 +143,41 @@ def kit_matches(r: TestResult, s: Subject) -> bool:
     return r.registered_phone is None or same_phone(r.registered_phone, subject_phone(s))
 
 
+KIT_FAIL_MESSAGE = (
+    "결과지를 연결하지 못했습니다. 키트 코드를 확인하고, 코드가 맞다면 키트 접수 때 등록한 "
+    "이름·생년월일·휴대폰이 이 피검자 정보와 같은지 확인해주세요."
+)
+
+
+def _kit_failures_today(db: Session, owner: User) -> int:
+    return db.query(KitClaimFailure).filter(
+        KitClaimFailure.owner_id == owner.id, KitClaimFailure.created_at >= now() - timedelta(days=1)
+    ).count()
+
+
+def _fail_kit_claim(db: Session, owner: User) -> AppError:
+    db.add(KitClaimFailure(owner_id=owner.id))
+    db.commit()
+    return AppError(400, "KIT_CLAIM_FAILED", KIT_FAIL_MESSAGE)
+
+
 def claim_kit(db: Session, owner: User, subject_id: int, kit_code: str) -> Subject:
+    """키트 코드로 결과 연결.
+
+    키트 코드는 순번 형식이라 추측하기 쉽다. 그래서
+    - '없는 코드 / 남에게 연결된 코드 / 정보 불일치'를 같은 메시지로 응답해 어떤 코드가 존재하는지 알 수 없게 하고
+    - 계정당 하루 실패 횟수를 제한한다.
+    """
     s = own_subject(db, owner, subject_id)
     if s.consent_at is None:
         raise AppError(400, "NOT_VERIFIED", f"{s.name}님의 휴대폰 인증을 먼저 완료해주세요.")
-    r = db.query(TestResult).filter_by(kit_code=kit_code.upper()).one_or_none()
-    if r is None:
-        raise AppError(404, "KIT_NOT_FOUND", "등록된 결과지가 없는 키트 코드입니다. 분석이 끝나지 않았을 수 있어요.")
-    if r.subject_id and r.subject_id != s.id:
-        raise AppError(409, "KIT_ALREADY_CLAIMED", "이미 다른 피검자에 연결된 키트입니다.")
-    if not kit_matches(r, s):
-        # 어떤 정보가 틀렸는지 알려주지 않는다(남의 키트 정보 추측 방지)
-        raise AppError(400, "KIT_OWNER_MISMATCH", "키트에 등록된 검사자 정보(이름·생년월일·휴대폰)와 일치하지 않습니다.")
+    if _kit_failures_today(db, owner) >= settings.kit_claim_daily_failures:
+        raise AppError(429, "TOO_MANY_KIT_ATTEMPTS", "키트 연결에 여러 번 실패했습니다. 내일 다시 시도하거나 고객센터로 문의해주세요.")
+    r = db.query(TestResult).filter_by(kit_code=kit_code.strip().upper()).one_or_none()
+    if r is not None and r.subject_id == s.id:
+        return s  # 이미 이 피검자에 연결됨(같은 요청 반복)
+    if r is None or r.subject_id is not None or not kit_matches(r, s):
+        raise _fail_kit_claim(db, owner)
     if r.registered_name is None:
         r.registered_name = s.name
         r.registered_birth_date = s.birth_date

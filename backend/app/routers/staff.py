@@ -217,8 +217,11 @@ def bulk_create_slots(body: SlotBulkIn, user: StaffUser, db: DbSession):
     cid = _scope_counselor_id(user, body.counselor_id)
     if cid is None:
         raise AppError(400, "COUNSELOR_REQUIRED", "상담사를 선택해주세요.")
-    if db.get(Counselor, cid) is None:
+    target = db.get(Counselor, cid)
+    if target is None:
         raise not_found("상담사")
+    if not target.active:
+        raise AppError(400, "COUNSELOR_INACTIVE", "비활성화된 상담사의 상담 시간은 만들 수 없습니다.")
     if body.date_to < body.date_from or (body.date_to - body.date_from).days > 62:
         raise AppError(400, "INVALID_RANGE", "기간은 최대 62일까지 지정할 수 있습니다.")
     if body.date_from < now().date():
@@ -271,6 +274,8 @@ def patch_slot(slot_id: int, body: SlotPatchIn, user: StaffUser, db: DbSession):
         raise not_found("슬롯")
     if s.start_at <= now():
         raise AppError(400, "PAST_SLOT", "이미 지난 시간은 열거나 닫을 수 없습니다.")
+    if body.status == SlotStatus.OPEN and not s.counselor.active:
+        raise AppError(400, "COUNSELOR_INACTIVE", "비활성화된 상담사의 시간은 열 수 없습니다.")
     if user.role == Role.COUNSELOR and s.counselor_id != user.counselor.id:
         raise forbidden()
     booked = db.scalars(

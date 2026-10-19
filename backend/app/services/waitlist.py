@@ -103,6 +103,8 @@ def _can_accept(db: Session, entry: WaitlistEntry, slot: Slot) -> bool:
 
 def _slot_is_offerable(db: Session, slot: Slot) -> bool:
     t = now()
+    if not slot.counselor.active:  # 비활성 상담사의 시간은 수락해도 예약할 수 없다
+        return False
     if slot.status != SlotStatus.OPEN or slot.start_at < t + timedelta(minutes=settings.booking_lead_minutes):
         return False
     if slot.hold_until and slot.hold_until > t:
@@ -137,6 +139,9 @@ def _offer(db: Session, entry: WaitlistEntry, slot: Slot) -> None:
         waitlist_id=entry.id,
         sms_to=entry.contact_phone,
     )
+    # 세션이 autoflush를 하지 않으므로, 같은 요청에서 다음 슬롯을 처리할 때 이 대기자가
+    # 여전히 'WAITING'으로 조회되지 않도록 즉시 반영한다(일괄 생성 시 중복 제안·다중 선점 방지).
+    db.flush()
 
 
 def offer_slot(db: Session, slot: Slot) -> WaitlistEntry | None:
@@ -152,6 +157,8 @@ def offer_slot(db: Session, slot: Slot) -> WaitlistEntry | None:
         .order_by(WaitlistEntry.created_at, WaitlistEntry.id)
     ).all()
     for entry in candidates:
+        if entry.status != WaitlistStatus.WAITING:  # 이번 요청에서 이미 제안받은 대기자
+            continue
         if _matches(entry, slot) and _can_accept(db, entry, slot):
             _offer(db, entry, slot)
             return entry
@@ -229,6 +236,24 @@ def cancel(db: Session, entry_id: int, customer: User) -> WaitlistEntry:
         offer_slot(db, slot)
     db.commit()
     return entry
+
+
+def release_offers_for_counselor(db: Session, counselor_id: int) -> int:
+    """상담사 비활성화 시: 그 상담사 시간으로 제안 중이던 대기를 거둬 다시 대기 상태로 돌린다."""
+    released = 0
+    for entry in db.scalars(select(WaitlistEntry).where(WaitlistEntry.status == WaitlistStatus.OFFERED)).all():
+        slot = db.get(Slot, entry.offered_slot_id) if entry.offered_slot_id else None
+        if slot and slot.counselor_id == counselor_id:
+            _release(db, entry)
+            entry.status = WaitlistStatus.WAITING
+            db.flush()
+            released += 1
+            # 같은 날 다른 상담사의 빈 시간이 있으면 바로 다시 제안
+            for other in booking_service.available_slots(db, entry.service_type, entry.desired_date, entry.desired_date, entry.counselor_id):
+                if other.counselor_id != counselor_id and _matches(entry, other) and _can_accept(db, entry, other):
+                    _offer(db, entry, other)
+                    break
+    return released
 
 
 def process_expirations(db: Session) -> int:

@@ -12,13 +12,18 @@ def _env_int(name: str, default: int) -> int:
     return int(os.getenv(name, default))
 
 
+# 저장소에 공개된 개발용 기본값. 데모 모드가 아니면 이 값으로는 서버가 켜지지 않는다(main.validate_settings).
+DEV_JWT_SECRET = "dev-only-secret-change-me-in-production-0000"
+DEV_INTEGRATION_KEY = "dev-integration-key"
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./allostar.db")
-    jwt_secret: str = os.getenv("JWT_SECRET", "dev-only-secret-change-me-in-production-0000")
+    jwt_secret: str = os.getenv("JWT_SECRET", DEV_JWT_SECRET)
     jwt_expire_minutes: int = _env_int("JWT_EXPIRE_MINUTES", 60 * 12)
     frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    integration_api_key: str = os.getenv("INTEGRATION_API_KEY", "dev-integration-key")
+    integration_api_key: str = os.getenv("INTEGRATION_API_KEY", DEV_INTEGRATION_KEY)
     # 데모 모드: 데모 계정 바로 입장(비밀번호 없이)과 데모 키트 코드 안내를 켠다. 운영 배포 시 false.
     # 기본은 꺼짐(안전한 기본값). 실행 스크립트(dev.cmd/dev.sh)와 docker-compose에서만 켠다.
     demo_mode: bool = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
@@ -45,6 +50,8 @@ class Settings:
     family_code_resend_seconds: int = _env_int("FAMILY_CODE_RESEND_SECONDS", 30)
     # 인증번호 문자: 번호당 하루 최대 발송 횟수(가입·가족 인증 합산)
     sms_daily_limit_per_phone: int = _env_int("SMS_DAILY_LIMIT_PER_PHONE", 5)
+    # 키트 연결 실패: 계정당 하루 최대 횟수(키트 코드 대입 추측 방지)
+    kit_claim_daily_failures: int = _env_int("KIT_CLAIM_DAILY_FAILURES", 10)
     # 계정당 등록 가능한 가족 수(본인 제외)
     max_family_members: int = _env_int("MAX_FAMILY_MEMBERS", 10)
     # 로그인 연속 실패 잠금: N회 실패 시 M분 잠금

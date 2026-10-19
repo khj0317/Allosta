@@ -90,7 +90,7 @@ def test_kit_connects_only_to_registered_person(client, f, db):
     other = client.post(f"/api/subjects/{sid}/claim-kit", json={"kit_code": "AL-OTHER"}, headers=auth(u))
     mine = client.post(f"/api/subjects/{sid}/claim-kit", json={"kit_code": "al-mom"}, headers=auth(u))
 
-    assert other.json()["detail"]["code"] == "KIT_OWNER_MISMATCH"
+    assert other.json()["detail"]["code"] == "KIT_CLAIM_FAILED"
     assert [r["kit_code"] for r in mine.json()["results"]] == ["AL-MOM"]
 
 

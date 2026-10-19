@@ -49,7 +49,7 @@ def test_impersonating_signup_cannot_claim_someone_elses_kit(client, db):
 
     res = client.post(f"/api/subjects/{me['id']}/claim-kit", json={"kit_code": "AL-MOM-1"}, headers=h)
 
-    assert res.json()["detail"]["code"] == "KIT_OWNER_MISMATCH"
+    assert res.json()["detail"]["code"] == "KIT_CLAIM_FAILED"
 
 
 def test_real_owner_can_claim_own_kit(client, db):

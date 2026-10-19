@@ -15,6 +15,7 @@ from ..models import Booking, BookingStatus, Counselor, Role, Slot, User
 from ..schemas import CounselorAdminOut, CounselorCreatedOut, CounselorCreateIn, CounselorPatchIn
 from ..security import AdminUser, DbSession, hash_password
 from ..services import phone as phone_svc
+from ..services import waitlist as waitlist_svc
 
 router = APIRouter(prefix="/api/admin/counselors", tags=["admin"])
 
@@ -92,6 +93,10 @@ def update_counselor(counselor_id: int, body: CounselorPatchIn, user: AdminUser,
             )
     if body.active is not None:
         c.active = body.active
+        if not body.active:
+            db.flush()
+            # 이 상담사 시간으로 제안 중이던 대기는 수락해도 예약이 안 되므로 거둬들인다
+            waitlist_svc.release_offers_for_counselor(db, c.id)
     if body.specialties is not None:
         c.specialties = [s.value for s in body.specialties]
     if body.bio is not None:
