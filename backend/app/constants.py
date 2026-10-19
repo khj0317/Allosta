@@ -8,13 +8,17 @@ DEMO_ACCOUNTS = {
     Role.ADMIN: "admin@allostar.kr",
 }
 
+# 보호 대상: '둘러보기' 계정 + README에 비밀번호가 공개된 시드 상담사 전원.
+# 상담사가 비활성화되면 그 상담사의 예약·대기 시연이 깨지므로 모두 보호한다.
+PROTECTED_DEMO_EMAILS = frozenset({*DEMO_ACCOUNTS.values(), "counselor2@allostar.kr", "counselor3@allostar.kr"})
+
 
 def is_protected_demo_account(email: str) -> bool:
     """공개 데모 주소에서 한 사람이 데모 계정을 바꿔 다른 평가자의 시연을 깨뜨리지 못하게 보호할 계정인가.
 
     데모 모드에서만 해당한다(비밀번호 변경·재설정, 탈퇴, 상담사 비활성화를 막음). 데이터는 재시작 시 시드로 초기화된다.
     """
-    return settings.demo_mode and email in DEMO_ACCOUNTS.values()
+    return settings.demo_mode and email in PROTECTED_DEMO_EMAILS
 
 SERVICE_LABELS = {
     ServiceType.METABOLIC: "종합 대사 분석",

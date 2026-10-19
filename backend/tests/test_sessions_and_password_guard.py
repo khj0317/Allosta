@@ -64,3 +64,9 @@ def test_shared_demo_accounts_are_protected_in_demo_mode(client, f, db):
     res = client.patch(f"/api/admin/counselors/{c.id}", json={"active": False}, headers=auth(f.user(Role.ADMIN)))
     assert res.json()["detail"]["code"] == "DEMO_ACCOUNT"
     assert db.get(Counselor, c.id).active
+
+    other = f.counselor()  # 둘러보기 계정이 아닌 시드 상담사도 보호
+    other.user.email = "counselor3@allostar.kr"
+    db.commit()
+    res = client.patch(f"/api/admin/counselors/{other.id}", json={"active": False}, headers=auth(f.user(Role.ADMIN)))
+    assert res.json()["detail"]["code"] == "DEMO_ACCOUNT"
