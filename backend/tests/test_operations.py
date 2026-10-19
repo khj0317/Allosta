@@ -27,7 +27,7 @@ def test_admin_issues_counselor_with_temp_password_that_must_be_changed(client, 
 
     h = {"Authorization": f"Bearer {login['access_token']}"}
     changed = client.post("/api/auth/password", json={"current_password": temp, "new_password": "newpass123"}, headers=h)
-    assert changed.json()["must_change_password"] is False
+    assert changed.json()["user"]["must_change_password"] is False
 
 
 def test_only_admin_can_issue_counselors(client, f):

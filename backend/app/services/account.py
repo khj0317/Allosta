@@ -39,8 +39,9 @@ from ..models import (
     WaitlistEntry,
     WaitlistStatus,
 )
-from ..security import hash_password, verify_password
+from ..security import hash_password
 from . import booking as booking_service
+from . import credentials
 from . import notification
 from . import waitlist as waitlist_service
 from .phone import digits
@@ -110,8 +111,8 @@ def _blocked_reason(user: User, imminent: list[Booking]) -> str | None:
 def withdraw(db: Session, user: User, password: str) -> None:
     if user.role != Role.CUSTOMER:
         raise AppError(403, "FORBIDDEN", "고객 계정만 탈퇴할 수 있습니다. 상담사·운영자 계정은 관리자가 비활성화합니다.")
-    if not verify_password(password, user.password_hash):
-        raise AppError(400, "WRONG_PASSWORD", "비밀번호가 올바르지 않습니다.")
+    # 비밀번호 확인은 로그인과 같은 실패 횟수로 잠근다(훔친 토큰으로 대입해 탈퇴시키는 것 방지)
+    credentials.check_password(db, user, password, status=400, code="WRONG_PASSWORD", message="비밀번호가 올바르지 않습니다.")
     upcoming = _upcoming(db, user)
     reason = _blocked_reason(user, _imminent(upcoming))
     if reason:

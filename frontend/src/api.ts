@@ -333,6 +333,7 @@ export class ApiError extends Error {
 }
 
 const TOKEN_KEY = 'allostar.token';
+export const LOGOUT_NOTICE_KEY = 'allostar.logout-notice';
 
 export const tokenStore = {
   get: () => {
@@ -358,11 +359,18 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (res.status === 401 && token) {
+    // 비밀번호 변경·탈퇴 등으로 로그인이 끊긴 경우 이유를 로그인 화면에 보여준다
+    const reason = typeof data?.detail === 'string' ? data.detail : null;
+    try {
+      if (reason) sessionStorage.setItem(LOGOUT_NOTICE_KEY, reason);
+    } catch {
+      /* 저장소를 못 써도 로그인 화면으로는 이동 */
+    }
     tokenStore.set(null);
     window.location.href = '/login';
   }
-  const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const detail = data?.detail;
     if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
@@ -399,8 +407,9 @@ export const api = {
     request<{ ok: boolean }>('POST', '/api/auth/password-reset', { email, phone, reset_token, new_password }),
   unreadCount: () => request<{ count: number }>('GET', '/api/notifications/unread-count'),
   readAllNotifications: () => request<{ read: number }>('POST', '/api/notifications/read-all'),
+  /** 바꾸면 다른 기기 로그인은 끊기고, 지금 기기용 새 토큰을 돌려받는다 */
   changePassword: (current_password: string, new_password: string) =>
-    request<User>('POST', '/api/auth/password', { current_password, new_password }),
+    request<{ access_token: string; user: User }>('POST', '/api/auth/password', { current_password, new_password }),
   adminCounselors: () => request<CounselorAdmin[]>('GET', '/api/admin/counselors'),
   createCounselor: (body: { name: string; email: string; phone: string; specialties: ServiceType[]; bio: string }) =>
     request<{ counselor: CounselorAdmin; temp_password: string }>('POST', '/api/admin/counselors', body),

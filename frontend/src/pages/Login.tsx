@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { api, type Role, type User } from '../api';
+import { api, LOGOUT_NOTICE_KEY, type Role, type User } from '../api';
 import { homeFor, useAuth } from '../auth';
 import { ErrorBox, useAction, useAsync } from '../components/ui';
 
@@ -86,7 +86,22 @@ export function Login() {
   const [password, setPassword] = useState('');
   const { data: meta } = useAsync(api.meta);
   const act = useAction();
-  const notice = (useLocation().state as { notice?: string } | null)?.notice;
+  const stateNotice = (useLocation().state as { notice?: string } | null)?.notice;
+  const [logoutNotice] = useState(() => {
+    try {
+      return sessionStorage.getItem(LOGOUT_NOTICE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(LOGOUT_NOTICE_KEY); // 한 번만 보여준다
+    } catch {
+      /* 무시 */
+    }
+  }, []);
+  const notice = stateNotice ?? logoutNotice;
   if (user) return <Navigate to={homeFor(user)} replace />;
 
   const enter = (p: Promise<User>) => act.run(() => p).then((u) => nav(homeFor(u)));

@@ -36,6 +36,7 @@ def create_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "role": user.role.value,
+        "ver": user.token_version or 0,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
@@ -56,6 +57,9 @@ def get_current_user(
     user = db.get(User, int(payload["sub"]))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "사용자를 찾을 수 없습니다.")
+    # 비밀번호가 바뀌기 전에 발급된 토큰(다른 기기 로그인, 탈취된 토큰)은 거부
+    if payload.get("ver", 0) != (user.token_version or 0):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 변경되어 로그아웃되었습니다. 다시 로그인해주세요.")
     # 탈퇴한 계정은 탈퇴 전에 발급된 토큰으로도 접근할 수 없다
     if user.withdrawn_at is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "탈퇴한 계정입니다.")

@@ -138,6 +138,8 @@ class User(Base):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 회원 탈퇴 시각. 개인정보는 지워지고 행만 익명으로 남는다(예약·주문 통계와 법정 보존 기록의 외래키 때문).
     withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 로그인 토큰 세대. 비밀번호를 바꾸면 올려서 그 전에 발급된 토큰(다른 기기 로그인)을 모두 무효로 만든다.
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     counselor: Mapped["Counselor | None"] = relationship(back_populates="user", uselist=False)

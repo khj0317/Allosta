@@ -1,4 +1,3 @@
-from datetime import timedelta
 
 from fastapi import APIRouter
 
@@ -18,7 +17,8 @@ from ..schemas import (
     TokenOut,
     UserOut,
 )
-from ..security import CurrentUser, DbSession, create_token, hash_password, verify_password
+from ..security import CurrentUser, DbSession, create_token, hash_password
+from ..services import credentials
 from ..services import phone as phone_svc
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -30,11 +30,6 @@ def to_user_out(user: User) -> UserOut:
     return out
 
 
-def _lock_message(user: User) -> str:
-    mins = max(1, int((user.locked_until - now()).total_seconds() // 60) + 1)
-    return f"로그인에 {settings.login_max_failures}회 실패해 잠겼습니다. 약 {mins}분 후 다시 시도해주세요."
-
-
 @router.post("/login", response_model=TokenOut)
 def login(body: LoginIn, db: DbSession):
     """비밀번호 무차별 대입 방지: 계정별 연속 실패 N회면 M분 잠금. 성공하면 실패 횟수 초기화."""
@@ -42,22 +37,11 @@ def login(body: LoginIn, db: DbSession):
     if user is None:
         # 가입 여부를 알려주지 않도록 비밀번호 오류와 같은 메시지
         raise AppError(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다.")
-    if user.locked_until and user.locked_until > now():
-        raise AppError(423, "ACCOUNT_LOCKED", _lock_message(user))
-    if not verify_password(body.password, user.password_hash):
-        user.failed_logins += 1
-        if user.failed_logins >= settings.login_max_failures:
-            user.locked_until = now() + timedelta(minutes=settings.login_lock_minutes)
-            user.failed_logins = 0
-            db.commit()
-            raise AppError(423, "ACCOUNT_LOCKED", _lock_message(user))
-        db.commit()
-        left = settings.login_max_failures - user.failed_logins
-        raise AppError(401, "INVALID_CREDENTIALS", f"이메일 또는 비밀번호가 올바르지 않습니다. ({left}회 더 틀리면 잠깁니다)")
+    credentials.check_password(db, user, body.password, status=401, code="INVALID_CREDENTIALS",
+                               message="이메일 또는 비밀번호가 올바르지 않습니다.")
     if user.counselor and not user.counselor.active:
+        db.commit()
         raise AppError(403, "ACCOUNT_DISABLED", "비활성화된 상담사 계정입니다. 운영 관리자에게 문의해주세요.")
-    user.failed_logins = 0
-    user.locked_until = None
     db.commit()
     return TokenOut(access_token=create_token(user), user=to_user_out(user))
 
@@ -97,21 +81,28 @@ def reset_password(body: ResetIn, db: DbSession):
     user.must_change_password = False
     user.failed_logins = 0
     user.locked_until = None
+    user.token_version = (user.token_version or 0) + 1  # 모든 기기에서 로그아웃
     db.commit()
     return {"ok": True}
 
 
-@router.post("/password", response_model=UserOut)
+@router.post("/password", response_model=TokenOut)
 def change_password(body: PasswordChangeIn, user: CurrentUser, db: DbSession):
-    """비밀번호 변경. 운영자가 발급한 임시 비밀번호 계정은 첫 로그인 후 반드시 여기서 바꾼다."""
-    if not verify_password(body.current_password, user.password_hash):
-        raise AppError(400, "WRONG_PASSWORD", "현재 비밀번호가 올바르지 않습니다.")
+    """비밀번호 변경. 운영자가 발급한 임시 비밀번호 계정은 첫 로그인 후 반드시 여기서 바꾼다.
+
+    현재 비밀번호 확인은 로그인과 같은 실패 횟수로 잠근다(훔친 토큰으로 대입 방지).
+    바꾸면 다른 기기의 로그인은 모두 끊기고, 지금 기기에는 새 토큰을 내려준다.
+    """
+    credentials.check_password(db, user, body.current_password, status=400, code="WRONG_PASSWORD",
+                               message="현재 비밀번호가 올바르지 않습니다.")
     if body.current_password == body.new_password:
+        db.commit()
         raise AppError(400, "SAME_PASSWORD", "새 비밀번호는 현재 비밀번호와 달라야 합니다.")
     user.password_hash = hash_password(body.new_password)
     user.must_change_password = False
+    user.token_version = (user.token_version or 0) + 1
     db.commit()
-    return to_user_out(user)
+    return TokenOut(access_token=create_token(user), user=to_user_out(user))
 
 
 @router.post("/phone/send")

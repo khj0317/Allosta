@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { api } from '../api';
+import { api, tokenStore } from '../api';
 import { homeFor, useAuth } from '../auth';
 import { ErrorBox, useAction } from '../components/ui';
 import { AuthLayout } from './Login';
 
 /** 비밀번호 변경. 운영자가 임시 비밀번호로 발급한 계정은 첫 로그인 직후 이 화면으로 온다. */
 export function ChangePassword() {
-  const { user, setCurrentUser, logout } = useAuth();
+  const { user, loading, setCurrentUser, logout } = useAuth();
   const nav = useNavigate();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const act = useAction();
+  if (loading) return null; // 새로고침 직후 로그인 정보를 불러오는 중에 로그인 화면으로 튕기지 않게
   if (!user) return <Navigate to="/login" replace />;
 
   const mismatch = confirm.length > 0 && next !== confirm;
@@ -40,9 +41,10 @@ export function ChangePassword() {
         onSubmit={(e) => {
           e.preventDefault();
           if (mismatch) return;
-          act.run(() => api.changePassword(current, next)).then((u) => {
-            setCurrentUser(u);
-            nav(homeFor(u), { replace: true });
+          act.run(() => api.changePassword(current, next)).then((res) => {
+            tokenStore.set(res.access_token); // 이전 토큰은 서버에서 무효가 되므로 새 토큰으로 교체
+            setCurrentUser(res.user);
+            nav(homeFor(res.user), { replace: true });
           });
         }}
       >
