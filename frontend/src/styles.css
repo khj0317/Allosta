@@ -152,6 +152,7 @@ p { margin: 0 0 8px; }
 .btn.btn-danger:not(.btn-ghost) { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn-sm { padding: 6px 12px; font-size: 13px; }
 .btn-block { width: 100%; margin-top: 16px; padding: 13px 18px; font-size: 15px; }
+.inline-links { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
 .link-btn { appearance: none; background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .link-btn:hover { color: var(--ink); text-decoration-color: var(--ink); }
 

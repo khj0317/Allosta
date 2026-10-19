@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { PhoneInput } from '../components/inputs';
-import { ErrorBox, useAction } from '../components/ui';
+import { ErrorBox, useAction, useAsync } from '../components/ui';
 import { AuthLayout } from './Login';
 
 /**
@@ -22,6 +22,8 @@ export function ForgotPassword() {
   const [deadline, setDeadline] = useState(0);
   const [left, setLeft] = useState(0);
   const act = useAction();
+  const { data: meta } = useAsync(api.meta);
+  const { data: hints } = useAsync(() => (meta?.demo_mode ? api.demoHints() : Promise.resolve(null)), [meta?.demo_mode]);
 
   useEffect(() => {
     if (!deadline) return;
@@ -89,14 +91,51 @@ export function ForgotPassword() {
             }
           }}
         >
+          {hints?.reset && !sent && (
+            <div className="alert alert-info">
+              <div>
+                데모 환경이라 실제 문자는 발송되지 않고, 인증번호를 화면에 보여드려요. 데모 고객 계정({hints.reset.email} ·{' '}
+                {hints.reset.phone})으로 시연할 수 있어요.
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setEmail(hints.reset!.email);
+                  setPhone(hints.reset!.phone);
+                }}
+              >
+                정보 채우기
+              </button>
+            </div>
+          )}
           <label>
             이메일
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={sent} autoComplete="username" />
           </label>
           <label>
             가입한 휴대폰 번호
-            <PhoneInput value={phone} onChange={setPhone} required />
+            <PhoneInput value={phone} onChange={setPhone} required disabled={sent} />
           </label>
+          {sent && meta?.demo_mode && (
+            demoCode ? (
+              <div className="alert alert-info">
+                <div>
+                  데모 환경 인증번호: <strong className="tabular">{demoCode}</strong>
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCode(demoCode)}>
+                  입력
+                </button>
+              </div>
+            ) : (
+              <div className="alert alert-warn">
+                <div>
+                  데모 환경 안내: 입력한 이메일·휴대폰과 일치하는 계정이 없어 인증번호를 보내지 않았어요. 운영 환경에서는 가입 여부를 알 수
+                  없도록 이 안내 없이 똑같이 진행됩니다.
+                </div>
+              </div>
+            )
+          )}
           {sent && (
             <label>
               인증번호
@@ -112,7 +151,6 @@ export function ForgotPassword() {
               <span className="hint">
                 정보가 맞으면 가입한 휴대폰으로 인증번호를 보냈어요.{' '}
                 {left > 0 ? `남은 시간 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '시간이 지났어요. 처음부터 다시 해주세요.'}
-                {demoCode && ` · 데모 환경 인증번호 ${demoCode}`}
               </span>
             </label>
           )}

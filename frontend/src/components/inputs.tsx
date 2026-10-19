@@ -38,11 +38,13 @@ export function BirthDateInput({
   value,
   onChange,
   required,
+  disabled,
   id,
 }: {
   value: string;
   onChange: (iso: string) => void;
   required?: boolean;
+  disabled?: boolean;
   id?: string;
 }) {
   const [digits, setDigits] = useState(digitsOf(value).slice(0, 8));
@@ -56,6 +58,7 @@ export function BirthDateInput({
         placeholder="예) 19910412"
         value={formatBirth(digits)}
         required={required}
+        disabled={disabled}
         aria-invalid={!!error}
         onChange={(e) => {
           const d = digitsOf(e.target.value).slice(0, 8);
@@ -87,11 +90,13 @@ export function PhoneInput({
   value,
   onChange,
   required,
+  disabled,
   id,
 }: {
   value: string;
   onChange: (formatted: string) => void;
   required?: boolean;
+  disabled?: boolean;
   id?: string;
 }) {
   return (
@@ -103,6 +108,7 @@ export function PhoneInput({
       placeholder="010-0000-0000"
       value={value}
       required={required}
+      disabled={disabled}
       onChange={(e) => onChange(formatPhone(digitsOf(e.target.value).slice(0, 11)))}
     />
   );

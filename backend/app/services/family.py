@@ -2,7 +2,7 @@
 
 '진짜 가족만' 등록되도록 두 겹으로 막는다.
 1) 가족 본인 휴대폰 인증: 가족의 휴대폰으로 인증번호를 보내고, 가족이 계정 소유자에게 알려준 번호를 입력해야
-   등록이 완료된다. 체크박스 자기 확인과 달리 그 사람의 휴대폰을 가진 실제 인물이 동의했다는 근거가 남는다.
+   그때 가족으로 등록된다(인증 전에는 목록에 생기지 않음). 체크박스 자기 확인과 달리 그 사람의 휴대폰을 가진 실제 인물이 동의했다는 근거가 남는다.
 2) 키트 등록 정보 대조: 검체 접수 때 등록된 이름·생년월일과 일치하는 피검자에게만 결과지를 연결한다.
    인증을 통과한 가족이라도 다른 사람의 결과를 가져올 수 없다.
 """
@@ -13,12 +13,13 @@ import re
 import secrets
 from datetime import timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import now
 from ..errors import AppError, not_found
-from ..models import Booking, KitClaimFailure, Relation, Subject, TestResult, User
+from ..models import Booking, KitClaimFailure, PhoneVerification, Relation, Subject, TestResult, User
 from . import notification
 from .phone import normalize, record_sms_send, same_phone
 
@@ -29,13 +30,16 @@ def _digits(phone: str) -> str:
     return re.sub(r"\D", "", phone)
 
 
-def _hash(subject_id: int, code: str) -> str:
-    # 피검자 ID를 섞어 같은 코드라도 다른 해시가 되게 한다
-    return hashlib.sha256(f"{subject_id}:{code}".encode()).hexdigest()
+FAMILY = "FAMILY"
 
 
 def _norm_name(name: str) -> str:
     return re.sub(r"\s+", "", name)
+
+
+def _hash(owner_id: int, phone: str, name: str, birth_date, code: str) -> str:
+    # 요청한 계정·가족 정보까지 섞는다: 문자에 적힌 사람(이름)과 다른 정보로 등록하거나 다른 계정이 쓰는 것을 막는다
+    return hashlib.sha256(f"{owner_id}:{_digits(phone)}:{_norm_name(name)}:{birth_date}:{code}".encode()).hexdigest()
 
 
 def own_subject(db: Session, user: User, subject_id: int) -> Subject:
@@ -45,25 +49,7 @@ def own_subject(db: Session, user: User, subject_id: int) -> Subject:
     return s
 
 
-def _send_code(db: Session, owner: User, s: Subject) -> str:
-    record_sms_send(db, s.phone, "FAMILY")
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    s.verify_code_hash = _hash(s.id, code)
-    s.verify_expires_at = now() + timedelta(minutes=settings.family_code_minutes)
-    s.verify_attempts = 0
-    s.verify_sent_at = now()
-    # 수신자가 서비스 회원이 아닐 수 있어 아웃박스(회원 알림함) 대신 발송기로 바로 보낸다.
-    notification.sms_sender.send(
-        s.phone,
-        "[알로스타] 가족 등록 확인",
-        f"{owner.name}님이 회원님({s.name})을 가족으로 등록해 검사 결과 상담을 받으려고 합니다.\n"
-        f"동의하시면 인증번호 {code} 를 {owner.name}님께 알려주세요. ({settings.family_code_minutes}분 이내)\n"
-        f"본인이 요청한 것이 아니라면 이 문자를 무시하세요.",
-    )
-    return code
-
-
-def add_family(db: Session, owner: User, *, name: str, relation: Relation, birth_date, phone: str) -> tuple[Subject, str]:
+def _check_new_family(db: Session, owner: User, relation: Relation, phone: str) -> None:
     if relation == Relation.SELF:
         raise AppError(400, "INVALID_RELATION", "본인은 가입 시 자동으로 등록됩니다.")
     family = db.query(Subject).filter(Subject.owner_id == owner.id, Subject.relation != Relation.SELF).all()
@@ -74,42 +60,67 @@ def add_family(db: Session, owner: User, *, name: str, relation: Relation, birth
     if any(f.phone and _digits(f.phone) == _digits(phone) for f in family):
         raise AppError(409, "PHONE_IN_USE", "이미 다른 가족에게 등록된 휴대폰 번호입니다.")
 
-    s = Subject(owner_id=owner.id, name=name.strip(), relation=relation, birth_date=birth_date, phone=normalize(phone))
-    db.add(s)
-    db.flush()
-    code = _send_code(db, owner, s)
-    db.commit()
-    return s, code
+
+def _latest(db: Session, owner: User, phone: str) -> PhoneVerification | None:
+    return db.scalars(
+        select(PhoneVerification)
+        .where(PhoneVerification.phone == _digits(phone), PhoneVerification.purpose == FAMILY,
+               PhoneVerification.owner_id == owner.id)
+        .order_by(PhoneVerification.id.desc())
+    ).first()
 
 
-def resend_code(db: Session, owner: User, subject_id: int) -> tuple[Subject, str]:
-    s = own_subject(db, owner, subject_id)
-    if s.consent_at:
-        raise AppError(400, "ALREADY_VERIFIED", "이미 확인이 끝난 가족입니다.")
-    if s.verify_sent_at and now() - s.verify_sent_at < timedelta(seconds=settings.family_code_resend_seconds):
+def request_code(db: Session, owner: User, *, name: str, relation: Relation, birth_date, phone: str) -> tuple[str, PhoneVerification]:
+    """가족 등록 1단계: 가족 본인 휴대폰으로 인증번호 발송. 아직 가족 목록에는 아무것도 생기지 않는다."""
+    _check_new_family(db, owner, relation, phone)
+    last = _latest(db, owner, phone)
+    if last and now() - last.created_at < timedelta(seconds=settings.family_code_resend_seconds):
         raise AppError(429, "TOO_SOON", "잠시 후 다시 요청해주세요.")
-    code = _send_code(db, owner, s)
+    record_sms_send(db, phone, FAMILY)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    v = PhoneVerification(
+        phone=_digits(phone),
+        purpose=FAMILY,
+        owner_id=owner.id,
+        code_hash=_hash(owner.id, phone, name, birth_date, code),
+        expires_at=now() + timedelta(minutes=settings.family_code_minutes),
+    )
+    db.add(v)
     db.commit()
-    return s, code
+    # 수신자가 서비스 회원이 아닐 수 있어 아웃박스(회원 알림함) 대신 발송기로 바로 보낸다.
+    notification.sms_sender.send(
+        phone,
+        "[알로스타] 가족 등록 확인",
+        f"{owner.name}님이 회원님({name.strip()})을 가족으로 등록해 검사 결과 상담을 받으려고 합니다.\n"
+        f"동의하시면 인증번호 {code} 를 {owner.name}님께 알려주세요. ({settings.family_code_minutes}분 이내)\n"
+        f"본인이 요청한 것이 아니라면 이 문자를 무시하세요.",
+    )
+    return code, v
 
 
-def verify(db: Session, owner: User, subject_id: int, code: str) -> Subject:
-    s = own_subject(db, owner, subject_id)
-    if s.consent_at:
-        return s
-    if not s.verify_code_hash or not s.verify_expires_at or s.verify_expires_at < now():
+def add_family(db: Session, owner: User, *, name: str, relation: Relation, birth_date, phone: str, code: str) -> Subject:
+    """가족 등록 2단계: 인증번호가 맞아야 그때 가족(동의 완료)으로 등록된다.
+
+    '등록 먼저, 인증은 나중'이면 확인되지 않은 사람이 가족 목록에 남는다. 인증을 등록의 조건으로 묶어
+    목록에 있는 가족은 모두 휴대폰 주인이 동의한 사람이 되게 한다.
+    """
+    _check_new_family(db, owner, relation, phone)
+    v = _latest(db, owner, phone)
+    if v is None or v.used_at is not None or v.expires_at < now():
         raise AppError(400, "CODE_EXPIRED", "인증번호가 만료되었습니다. 다시 받아주세요.")
-    if s.verify_attempts >= settings.family_code_max_attempts:
+    if v.attempts >= settings.family_code_max_attempts:
         raise AppError(429, "TOO_MANY_ATTEMPTS", "입력 횟수를 초과했습니다. 인증번호를 다시 받아주세요.")
-    s.verify_attempts += 1
-    if not hmac.compare_digest(s.verify_code_hash, _hash(s.id, code)):
+    v.attempts += 1
+    if not hmac.compare_digest(v.code_hash, _hash(owner.id, phone, name, birth_date, code)):
         db.commit()
-        left = settings.family_code_max_attempts - s.verify_attempts
+        left = settings.family_code_max_attempts - v.attempts
         raise AppError(400, "CODE_MISMATCH", f"인증번호가 일치하지 않습니다. (남은 횟수 {left}회)")
-    s.consent_at = now()
-    s.verify_code_hash = None
-    s.verify_expires_at = None
+    v.verified_at = v.used_at = now()
+    s = Subject(owner_id=owner.id, name=name.strip(), relation=relation, birth_date=birth_date,
+                phone=normalize(phone), consent_at=now())
+    db.add(s)
     db.commit()
+    db.refresh(s)
     return s
 
 

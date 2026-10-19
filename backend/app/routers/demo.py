@@ -56,3 +56,19 @@ def demo_kits(db: DbSession, user: CustomerUser, subject_id: int):
         for r in rows
         if family.kit_matches(r, subject)
     ]
+
+
+@router.get("/hints")
+def demo_hints(db: DbSession):
+    """실제 문자가 가지 않는 데모 환경에서 화면에 채워 넣을 수 있는 시연용 정보.
+
+    - reset: 비밀번호 찾기에 쓸 데모 고객 계정의 이메일·가입 휴대폰
+    - family: 시드에서 가족 등록을 하지 않은 데모 아버지(키트 AL-DEMO-00이 이 정보로 접수돼 있음)
+    """
+    from ..seed import DEMO_DAD
+
+    customer = db.query(User).filter_by(email=DEMO_ACCOUNTS[Role.CUSTOMER]).one_or_none()
+    return {
+        "reset": {"email": customer.email, "phone": customer.phone} if customer else None,
+        "family": {**DEMO_DAD, "relation": DEMO_DAD["relation"].value, "birth_date": DEMO_DAD["birth_date"].isoformat()},
+    }

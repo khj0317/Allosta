@@ -164,6 +164,10 @@ def _user(db: Session, email: str, name: str, role: Role, phone: str | None = No
     return u
 
 
+# 시드에서 가족으로 등록하지 않은 데모 아버지. 화면의 데모 안내(/api/demo/hints)로 채워 넣을 수 있다.
+DEMO_DAD = {"name": "홍판서", "relation": Relation.PARENT, "birth_date": date(1960, 1, 22), "phone": "010-3456-7890"}
+
+
 def seed(db: Session) -> None:
     t = now()
     today = t.date()
@@ -189,22 +193,21 @@ def seed(db: Session) -> None:
         products.append(p)
     db.flush()
 
-    # ---- 데모 고객(가상 인물 홍길동): 본인 결과 2종 + 어머니(휴대폰 인증 완료) + 아버지(인증 전, 키트 미연결)
+    # ---- 데모 고객(가상 인물 홍길동): 본인 결과 2종 + 어머니(가족 등록 완료).
+    #      아버지(홍판서)는 아직 가족 등록 전 → '가족 추가 → 인증 → 키트 연결' 시연용
     demo = _user(db, "customer@allostar.kr", "홍길동", Role.CUSTOMER, "010-1234-5678")
     db.flush()
     me = Subject(owner_id=demo.id, name="홍길동", birth_date=date(1990, 3, 1), relation=Relation.SELF,
                  phone=demo.phone, consent_at=t)
     mom = Subject(owner_id=demo.id, name="성춘향", birth_date=date(1962, 9, 3), relation=Relation.PARENT,
                   phone="010-2345-6789", consent_at=t)
-    dad = Subject(owner_id=demo.id, name="홍판서", birth_date=date(1960, 1, 22), relation=Relation.PARENT,
-                  phone="010-3456-7890")
-    db.add_all([me, mom, dad])
+    db.add_all([me, mom])
     demo_meta = _make_result(db, "AL-MB-2026-0001", ServiceType.METABOLIC, me, t - timedelta(days=40), 0.4)
     demo_food = _make_result(db, "AL-FS-2026-0002", ServiceType.FOOD_SENSITIVITY, me, t - timedelta(days=6), 0.35)
     _make_result(db, "AL-NM-2026-0003", ServiceType.NUTRIENT_METAL, mom, t - timedelta(days=4), 0.45)
-    # 아버지 키트: 검체 접수 때 아버지 정보로 등록됐지만 계정에는 아직 연결 전 → 인증 후 '키트 연결' 시연용
+    # 아버지 키트: 검체 접수 때 아버지 정보로 등록됐지만 계정에는 아직 연결 전
     dad_kit = _make_result(db, "AL-DEMO-00", ServiceType.METABOLIC, None, t - timedelta(days=2), 0.45)
-    dad_kit.registered_name, dad_kit.registered_birth_date, dad_kit.registered_phone = dad.name, dad.birth_date, dad.phone
+    dad_kit.registered_name, dad_kit.registered_birth_date, dad_kit.registered_phone = DEMO_DAD["name"], DEMO_DAD["birth_date"], DEMO_DAD["phone"]
 
     # ---- 회원가입 후 바로 연결해 볼 수 있는 데모 키트(미연결). /api/demo/kits 로 안내된다.
     for i, service in enumerate([ServiceType.METABOLIC, ServiceType.FOOD_SENSITIVITY, ServiceType.NUTRIENT_METAL] * 4, 1):

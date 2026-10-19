@@ -149,7 +149,9 @@ class FamilyIn(BaseModel):
         return v
 
 
-class VerifyCodeIn(BaseModel):
+class FamilyAddIn(FamilyIn):
+    """가족 본인 휴대폰으로 받은 인증번호까지 맞아야 가족으로 등록된다."""
+
     code: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{6}$")]
 
 
@@ -188,13 +190,12 @@ class SubjectOut(ORM):
     relation: Relation
     phone_masked: str | None = None
     consent_at: datetime | None
-    # 인증번호를 보냈고 아직 확인 전이면 만료 시각
-    verify_expires_at: datetime | None = None
     results: list[ResultSummary] = []
 
 
 class FamilyCodeOut(BaseModel):
-    subject: SubjectOut
+    sent: bool = True
+    expires_at: datetime
     # 데모 모드에서만 채워진다(실제 문자 발송이 없으므로 화면에 안내). 운영에서는 항상 null.
     demo_code: str | None = None
 

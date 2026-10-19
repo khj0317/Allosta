@@ -55,8 +55,6 @@ export interface Subject {
   phone_masked: string | null;
   /** 가족 본인 휴대폰 인증 완료 시각(본인은 가입 시각). 없으면 결과 연결·예약 불가 */
   consent_at: string | null;
-  /** 인증번호 발송 후 확인 전이면 만료 시각 */
-  verify_expires_at: string | null;
   results: ResultSummary[];
 }
 
@@ -233,8 +231,22 @@ export interface Meta {
 export type Contact = 'OWNER' | 'SUBJECT';
 
 export interface FamilyCode {
-  subject: Subject;
+  sent: boolean;
+  expires_at: string;
+  /** 데모 모드에서만 채워진다(실제 문자 발송 없음) */
   demo_code: string | null;
+}
+
+export interface FamilyInput {
+  name: string;
+  relation: Relation;
+  birth_date: string;
+  phone: string;
+}
+
+export interface DemoHints {
+  reset: { email: string; phone: string } | null;
+  family: FamilyInput;
 }
 
 export interface SignupInput {
@@ -389,15 +401,15 @@ export const api = {
   demoKits: (subjectId: number) =>
     request<{ kit_code: string; service_label: string; registered: boolean }[]>('GET', `/api/demo/kits?subject_id=${subjectId}`),
   meta: () => request<Meta>('GET', '/api/meta'),
+  demoHints: () => request<DemoHints>('GET', '/api/demo/hints'),
   products: () => request<Product[]>('GET', '/api/products'),
   counselors: () => request<CounselorInfo[]>('GET', '/api/counselors'),
 
   subjects: () => request<Subject[]>('GET', '/api/subjects'),
-  /** 가족 등록 → 가족 본인 휴대폰으로 인증번호 발송. demo_code는 데모 모드에서만 채워진다 */
-  addFamily: (body: { name: string; relation: Relation; birth_date: string; phone: string }) =>
-    request<FamilyCode>('POST', '/api/subjects', body),
-  resendFamilyCode: (id: number) => request<FamilyCode>('POST', `/api/subjects/${id}/verification`),
-  verifyFamily: (id: number, code: string) => request<Subject>('POST', `/api/subjects/${id}/verify`, { code }),
+  /** 가족 등록 1단계: 가족 본인 휴대폰으로 인증번호 발송(아직 등록되지 않음) */
+  sendFamilyCode: (body: FamilyInput) => request<FamilyCode>('POST', '/api/subjects/verification', body),
+  /** 가족 등록 2단계: 인증번호가 맞으면 그때 등록 */
+  addFamily: (body: FamilyInput & { code: string }) => request<Subject>('POST', '/api/subjects', body),
   removeFamily: (id: number) => request<null>('DELETE', `/api/subjects/${id}`),
   claimKit: (id: number, kit_code: string) => request<Subject>('POST', `/api/subjects/${id}/claim-kit`, { kit_code }),
   result: (id: number) => request<ResultDetail>('GET', `/api/results/${id}`),

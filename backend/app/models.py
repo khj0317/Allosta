@@ -169,11 +169,6 @@ class Subject(Base):
     # 피검자 본인 확인 + 결과 열람·상담 동의 완료 시각.
     # 본인(SELF)은 가입 시 동의, 가족은 휴대폰 인증번호 확인 시점. 이 값이 없으면 결과 연결·예약 불가.
     consent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # 휴대폰 인증 진행 상태(코드는 해시로만 저장)
-    verify_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    verify_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    verify_attempts: Mapped[int] = mapped_column(Integer, default=0)
-    verify_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     results: Mapped[list["TestResult"]] = relationship(back_populates="subject")
@@ -228,8 +223,10 @@ class PhoneVerification(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(String(20), index=True)  # 숫자만
-    # SIGNUP(가입) / RESET(비밀번호 재설정): 한 용도로 받은 인증을 다른 용도에 쓸 수 없다
+    # SIGNUP(가입) / RESET(비밀번호 재설정) / FAMILY(가족 등록): 한 용도로 받은 인증을 다른 용도에 쓸 수 없다
     purpose: Mapped[str] = mapped_column(String(10), default="SIGNUP")
+    # FAMILY: 인증번호를 요청한 계정. 다른 계정이 같은 번호로 요청해도 서로의 인증에 섞이지 않는다
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     code_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)

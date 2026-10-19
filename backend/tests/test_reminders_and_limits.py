@@ -92,11 +92,10 @@ def test_signup_code_has_daily_limit_per_phone(client):
 
 def test_family_code_shares_the_daily_limit(client, f):
     u = f.user()
-    sid = client.post("/api/subjects", headers=auth(u), json={
-        "name": "엄마", "relation": "PARENT", "birth_date": "1962-09-03", "phone": "010-5555-1111"}).json()["subject"]["id"]
-    for _ in range(4):  # 등록 시 1회 + 재발송 4회 = 5회
-        assert client.post(f"/api/subjects/{sid}/verification", headers=auth(u)).status_code == 200
-    res = client.post(f"/api/subjects/{sid}/verification", headers=auth(u))
+    body = {"name": "엄마", "relation": "PARENT", "birth_date": "1962-09-03", "phone": "010-5555-1111"}
+    for _ in range(5):
+        assert client.post("/api/subjects/verification", headers=auth(u), json=body).status_code == 200
+    res = client.post("/api/subjects/verification", headers=auth(u), json=body)
     assert res.json()["detail"]["code"] == "DAILY_LIMIT"
 
 

@@ -10,12 +10,12 @@ from ..errors import forbidden, not_found
 from ..models import Booking, IndicatorStatus, Role, Subject, TestResult
 from ..schemas import (
     ClaimKitIn,
+    FamilyAddIn,
     FamilyCodeOut,
     FamilyIn,
     ResultDetail,
     ResultSummary,
     SubjectOut,
-    VerifyCodeIn,
 )
 from ..security import CurrentUser, CustomerUser, DbSession
 from ..services import family
@@ -55,13 +55,8 @@ def subject_out(s: Subject) -> SubjectOut:
         relation=s.relation,
         phone_masked=_mask_phone(s.phone),
         consent_at=s.consent_at,
-        verify_expires_at=None if s.consent_at else s.verify_expires_at,
         results=[result_summary(r) for r in sorted(s.results, key=lambda r: r.reported_at, reverse=True)],
     )
-
-
-def _code_out(s: Subject, code: str) -> FamilyCodeOut:
-    return FamilyCodeOut(subject=subject_out(s), demo_code=code if settings.demo_mode else None)
 
 
 @router.get("/subjects", response_model=list[SubjectOut])
@@ -70,22 +65,17 @@ def list_subjects(user: CustomerUser, db: DbSession):
     return [subject_out(s) for s in subjects]
 
 
-@router.post("/subjects", response_model=FamilyCodeOut, status_code=201)
-def add_family(body: FamilyIn, user: CustomerUser, db: DbSession):
-    """가족 등록 → 가족 본인 휴대폰으로 인증번호 발송. 인증 전에는 결과 연결·예약 불가."""
-    s, code = family.add_family(db, user, **body.model_dump())
-    return _code_out(s, code)
+@router.post("/subjects/verification", response_model=FamilyCodeOut)
+def send_family_code(body: FamilyIn, user: CustomerUser, db: DbSession):
+    """가족 등록 1단계: 가족 본인 휴대폰으로 인증번호 발송(아직 등록되지 않음)."""
+    code, v = family.request_code(db, user, **body.model_dump())
+    return FamilyCodeOut(expires_at=v.expires_at, demo_code=code if settings.demo_mode else None)
 
 
-@router.post("/subjects/{subject_id}/verification", response_model=FamilyCodeOut)
-def resend_code(subject_id: int, user: CustomerUser, db: DbSession):
-    s, code = family.resend_code(db, user, subject_id)
-    return _code_out(s, code)
-
-
-@router.post("/subjects/{subject_id}/verify", response_model=SubjectOut)
-def verify_family(subject_id: int, body: VerifyCodeIn, user: CustomerUser, db: DbSession):
-    return subject_out(family.verify(db, user, subject_id, body.code))
+@router.post("/subjects", response_model=SubjectOut, status_code=201)
+def add_family(body: FamilyAddIn, user: CustomerUser, db: DbSession):
+    """가족 등록 2단계: 인증번호가 맞으면 그때 가족으로 등록된다."""
+    return subject_out(family.add_family(db, user, **body.model_dump()))
 
 
 @router.delete("/subjects/{subject_id}", status_code=204)
