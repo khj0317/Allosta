@@ -281,6 +281,7 @@ class BookingOut(BaseModel):
     pre_questions: str
     concern_tags: list[str]
     attendance_confirmed_at: datetime | None
+    attendance_declined_at: datetime | None = None
     call_attempts: int
     cancel_reason: str | None
     created_at: datetime
@@ -308,6 +309,7 @@ class BookingOut(BaseModel):
             pre_questions=b.pre_questions,
             concern_tags=b.concern_tags or [],
             attendance_confirmed_at=b.attendance_confirmed_at,
+            attendance_declined_at=b.attendance_declined_at,
             call_attempts=b.call_attempts,
             cancel_reason=b.cancel_reason,
             created_at=b.created_at,

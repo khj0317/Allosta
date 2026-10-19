@@ -105,7 +105,13 @@ export function ConsultWorkspace() {
         </div>
         {b.status === 'CONFIRMED' && (
           <div className="row">
-            {b.attendance_confirmed_at ? <Badge tone="ok">고객 참석 확인</Badge> : <Badge tone="warn">참석 미확인</Badge>}
+            {b.attendance_declined_at ? (
+              <Badge tone="danger">통화 어려움 응답</Badge>
+            ) : b.attendance_confirmed_at ? (
+              <Badge tone="ok">고객 참석 확인</Badge>
+            ) : (
+              <Badge tone="warn">참석 미확인</Badge>
+            )}
             <button className="btn btn-ghost btn-sm" disabled={act.busy} onClick={() => doAction(() => api.callAttempt(b.id))}>
               통화 시도 기록 · {b.call_attempts}회
             </button>

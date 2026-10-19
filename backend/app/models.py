@@ -237,6 +237,18 @@ class PhoneVerification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class SmsSendLog(Base):
+    """인증번호 문자 발송 기록. 번호당 하루 발송 상한으로 남의 번호에 문자를 퍼붓는 악용을 막는다."""
+
+    __tablename__ = "sms_send_logs"
+    __table_args__ = (Index("ix_sms_log_phone_time", "phone", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(20))  # 숫자만
+    purpose: Mapped[str] = mapped_column(String(20))  # SIGNUP / FAMILY
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Slot(Base):
     __tablename__ = "slots"
     __table_args__ = (UniqueConstraint("counselor_id", "start_at", name="uq_slot_counselor_start"),)
@@ -280,6 +292,10 @@ class Booking(Base):
     concern_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     # 리마인더에 대한 고객 응답(참석 확인). 미확인 예약은 상담사 화면에서 강조된다.
     attendance_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 리마인더 문자에서 '통화가 어려워요'를 누른 시각. 상담사·계정 주인에게 알린다.
+    attendance_declined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 문자 링크용 1회 발급 토큰(해시만 저장). 로그인 없이 참석 응답 → 가족 번호로 받아도 응답 가능.
+    attendance_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     call_attempts: Mapped[int] = mapped_column(Integer, default=0)
     cancel_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)

@@ -104,7 +104,13 @@ function ScheduleList({ items, showCounselor }: { items: Booking[]; showCounselo
               <div className="right">
                 <Badge tone={BOOKING_STATUS[b.status].tone}>{BOOKING_STATUS[b.status].label}</Badge>
                 {b.status === 'CONFIRMED' &&
-                  (b.attendance_confirmed_at ? <Badge tone="ok">참석 확인</Badge> : <Badge tone="warn">참석 미확인</Badge>)}
+                  (b.attendance_declined_at ? (
+                    <Badge tone="danger">통화 어려움</Badge>
+                  ) : b.attendance_confirmed_at ? (
+                    <Badge tone="ok">참석 확인</Badge>
+                  ) : (
+                    <Badge tone="warn">참석 미확인</Badge>
+                  ))}
                 {b.status === 'CONFIRMED' && started && <Badge tone="danger">기록 대기</Badge>}
                 {b.call_attempts > 0 && b.status === 'CONFIRMED' && <span className="small muted">통화 시도 {b.call_attempts}회</span>}
               </div>

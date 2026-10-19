@@ -78,20 +78,30 @@ def enqueue(
         )
 
 
-def schedule_for_new_booking(db: Session, booking: Booking) -> None:
+def attendance_link(token: str) -> str:
+    """문자로 받은 사람이 로그인 없이 참석 응답하는 링크(가족 번호로 받아도 응답 가능)."""
+    return f"{settings.frontend_url}/c/{token}"
+
+
+def schedule_for_new_booking(db: Session, booking: Booking, token: str, *, rescheduled_from: datetime | None = None) -> None:
+    """확정(또는 일정 변경) 알림 1통 + 리마인더. 일정 변경이면 '취소'와 '확정' 2통 대신 '변경' 1통만 보낸다."""
     start = booking.slot.start_at
     counselor_name = booking.counselor.user.name
-    link = f"{settings.frontend_url}/my/bookings/{booking.id}"
-    enqueue(
-        db,
-        booking.customer,
-        NotificationType.BOOKING_CONFIRMED,
-        "상담 예약이 확정되었습니다",
-        f"{fmt_dt(start)} {counselor_name} 상담사가 {booking.contact_phone}로 전화드립니다.\n"
-        f"피검자: {booking.subject.name}\n예약 확인/변경: {link}",
-        booking_id=booking.id,
-        sms_to=booking.contact_phone,
-    )
+    link = attendance_link(token)
+    if rescheduled_from:
+        title = "상담 일정이 변경되었습니다"
+        body = (
+            f"{fmt_dt(rescheduled_from)} → {fmt_dt(start)}로 변경되었습니다.\n"
+            f"{counselor_name} 상담사가 {booking.contact_phone}로 전화드립니다.\n참석 확인: {link}"
+        )
+    else:
+        title = "상담 예약이 확정되었습니다"
+        body = (
+            f"{fmt_dt(start)} {counselor_name} 상담사가 {booking.contact_phone}로 전화드립니다.\n"
+            f"피검자: {booking.subject.name}\n참석 확인: {link}"
+        )
+    enqueue(db, booking.customer, NotificationType.BOOKING_CONFIRMED, title, body,
+            booking_id=booking.id, sms_to=booking.contact_phone)
     for offset in settings.reminder_offsets_minutes:
         at = start - timedelta(minutes=offset)
         if at <= now():
@@ -103,7 +113,7 @@ def schedule_for_new_booking(db: Session, booking: Booking) -> None:
             NotificationType.REMINDER,
             f"[리마인더] {when} 상담이 예정되어 있습니다",
             f"{fmt_dt(start)} {booking.contact_phone}로 전화드립니다.\n"
-            f"통화 가능하시면 '참석 확인'을 눌러주세요. 어려우시면 미리 변경해주세요.\n{link}",
+            f"아래 링크에서 '통화 가능' 또는 '어려워요'를 눌러주세요(로그인 필요 없음).\n{link}",
             scheduled_at=at,
             booking_id=booking.id,
             sms_to=booking.contact_phone,

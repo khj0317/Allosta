@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import Base, engine
-from .routers import admin_counselors, auth, bookings, common, customer, demo, integrations, staff, waitlist
+from .routers import admin_counselors, auth, bookings, common, customer, demo, integrations, public, staff, waitlist
 from .services import scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -49,6 +49,7 @@ for r in (
     admin_counselors.router,
     integrations.router,
     demo.router,
+    public.router,
 ):
     app.include_router(r)
 

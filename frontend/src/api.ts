@@ -94,6 +94,8 @@ export interface Booking {
   pre_questions: string;
   concern_tags: string[];
   attendance_confirmed_at: string | null;
+  /** 리마인더 문자에서 '어려워요'를 누른 시각 */
+  attendance_declined_at: string | null;
   call_attempts: number;
   cancel_reason: string | null;
   created_at: string;
@@ -183,6 +185,18 @@ export interface CounselorBookingDetail {
   record: ConsultRecord | null;
   record_editable_until: string | null;
   revisions: { id: number; editor_name: string; reason: string; changed_fields: string[]; created_at: string }[];
+}
+
+export interface PublicAttendance {
+  start_at: string;
+  end_at: string;
+  counselor_name: string;
+  subject_name: string;
+  contact_phone: string;
+  status: BookingStatus;
+  attendance_confirmed_at: string | null;
+  attendance_declined_at: string | null;
+  can_respond: boolean;
 }
 
 export interface CounselorAdmin {
@@ -350,6 +364,9 @@ export const api = {
     request<{ counselor: CounselorAdmin; temp_password: string }>('POST', '/api/admin/counselors', body),
   updateCounselor: (id: number, body: { active?: boolean; specialties?: ServiceType[]; bio?: string }) =>
     request<CounselorAdmin>('PATCH', `/api/admin/counselors/${id}`, body),
+  publicAttendance: (token: string) => request<PublicAttendance>('GET', `/api/public/attendance/${encodeURIComponent(token)}`),
+  publicConfirm: (token: string) => request<PublicAttendance>('POST', `/api/public/attendance/${encodeURIComponent(token)}/confirm`),
+  publicDecline: (token: string) => request<PublicAttendance>('POST', `/api/public/attendance/${encodeURIComponent(token)}/decline`),
   overdueBookings: (counselor_id?: number) => request<Booking[]>('GET', '/api/staff/bookings/overdue' + qs({ counselor_id })),
   demoSession: (role: Role) => request<{ access_token: string; user: User }>('POST', '/api/demo/session', { role }),
   demoKits: (subjectId: number) =>

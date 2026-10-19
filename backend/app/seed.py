@@ -34,6 +34,7 @@ from .models import (
 )
 from .security import hash_password
 from .services import notification
+from .services.booking import issue_attendance_token
 
 PASSWORD = "demo1234"
 rnd = random.Random(20261014)
@@ -390,8 +391,10 @@ def seed(db: Session) -> None:
     db.flush()
 
     for b in future_bookings:
+        token = issue_attendance_token(b)
+        db.flush()
         db.refresh(b)
-        notification.schedule_for_new_booking(db, b)
+        notification.schedule_for_new_booking(db, b, token)
     db.flush()
     # 시드 시점 이전 알림은 이미 발송된 것으로 처리(콘솔 SMS 폭주 방지)
     for n in db.query(Notification).filter(Notification.scheduled_at <= now()):

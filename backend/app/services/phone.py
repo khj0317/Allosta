@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import now
 from ..errors import AppError
-from ..models import PhoneVerification, User
+from ..models import PhoneVerification, SmsSendLog, User
 from . import notification
 
 TOKEN_MINUTES = 30
@@ -45,6 +45,19 @@ def phone_taken(db: Session, phone: str) -> bool:
     return db.query(User).filter_by(phone=normalize(phone)).count() > 0
 
 
+def record_sms_send(db: Session, phone: str, purpose: str) -> None:
+    """인증번호 문자 1건 발송 전에 호출. 같은 번호로 하루 상한을 넘기면 거부한다(가입·가족 인증 합산).
+
+    30초 재발송 간격만으로는 남의 번호로 하루 종일 문자를 보내는 악용(비용·스팸)을 막지 못한다.
+    """
+    d = digits(phone)
+    since = now() - timedelta(days=1)
+    sent = db.query(SmsSendLog).filter(SmsSendLog.phone == d, SmsSendLog.created_at >= since).count()
+    if sent >= settings.sms_daily_limit_per_phone:
+        raise AppError(429, "DAILY_LIMIT", "이 번호로 오늘 보낼 수 있는 인증번호를 모두 사용했습니다. 내일 다시 시도해주세요.")
+    db.add(SmsSendLog(phone=d, purpose=purpose))
+
+
 def send(db: Session, phone: str) -> str:
     d = digits(phone)
     if phone_taken(db, d):
@@ -54,6 +67,7 @@ def send(db: Session, phone: str) -> str:
     ).first()
     if last and now() - last.created_at < timedelta(seconds=settings.family_code_resend_seconds):
         raise AppError(429, "TOO_SOON", "잠시 후 다시 요청해주세요.")
+    record_sms_send(db, phone, "SIGNUP")
     code = f"{secrets.randbelow(1_000_000):06d}"
     db.add(
         PhoneVerification(

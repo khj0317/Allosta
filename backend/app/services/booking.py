@@ -5,6 +5,8 @@
 2) DB 불변식: bookings(slot_id) WHERE status != 'CANCELLED' 부분 유니크 인덱스
    → 동시 요청이 1)을 동시에 통과하더라도 커밋은 단 1건만 성공한다(나머지는 409 + 대안 슬롯 제시).
 """
+import hashlib
+import secrets
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import exists, select
@@ -153,9 +155,11 @@ def create_booking(
     concern_tags: list[str] | None = None,
     waitlist_entry: WaitlistEntry | None = None,
     exclude_booking_id: int | None = None,
+    rescheduled_from: datetime | None = None,
     commit: bool = True,
 ) -> Booking:
-    """contact_phone은 내부 호출(일정 변경·대기 수락)에서 이미 검증된 번호를 이어받을 때만 쓴다."""
+    """contact_phone은 내부 호출(일정 변경·대기 수락)에서 이미 검증된 번호를 이어받을 때만 쓴다.
+    rescheduled_from이 있으면 확정 알림 대신 '일정 변경' 알림 1통을 보낸다."""
     subject, result = load_subject_and_result(db, customer, subject_id, result_id)
     contact_phone = contact_phone or resolve_contact_phone(customer, subject, contact)
     slot = db.get(Slot, slot_id)
@@ -197,8 +201,10 @@ def create_booking(
 
     slot.held_for_waitlist_id = None
     slot.hold_until = None
+    token = issue_attendance_token(booking)
+    db.flush()  # refresh가 미저장 값을 덮어쓰지 않도록 먼저 저장
     db.refresh(booking)
-    notification.schedule_for_new_booking(db, booking)
+    notification.schedule_for_new_booking(db, booking, token, rescheduled_from=rescheduled_from)
     if commit:
         db.commit()
     return booking
@@ -220,7 +226,20 @@ def _assert_changeable_by_customer(booking: Booking):
         )
 
 
-def cancel_booking(db: Session, booking: Booking, user: User, reason: str = "", commit: bool = True) -> Booking:
+def issue_attendance_token(booking: Booking) -> str:
+    """문자 링크용 토큰 발급. 원문은 문자에만 담고 DB에는 해시만 남긴다."""
+    token = secrets.token_urlsafe(16)
+    booking.attendance_token_hash = hash_token(token)
+    return token
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def cancel_booking(
+    db: Session, booking: Booking, user: User, reason: str = "", commit: bool = True, notify: bool = True
+) -> Booking:
     from . import waitlist  # 순환 import 방지
 
     if user.role.value == "CUSTOMER":
@@ -233,16 +252,17 @@ def cancel_booking(db: Session, booking: Booking, user: User, reason: str = "", 
     booking.cancelled_at = now()
     booking.cancel_reason = reason or None
     notification.cancel_pending_for_booking(db, booking.id)
-    notification.enqueue(
-        db,
-        booking.customer,
-        NotificationType.BOOKING_CANCELLED,
-        "상담 예약이 취소되었습니다",
-        f"{notification.fmt_dt(booking.slot.start_at)} 상담 예약이 취소되었습니다."
-        + (f"\n사유: {reason}" if reason else ""),
-        booking_id=booking.id,
-        sms_to=booking.contact_phone,
-    )
+    if notify:  # 일정 변경은 새 예약 쪽에서 '변경' 알림 1통으로 대신한다
+        notification.enqueue(
+            db,
+            booking.customer,
+            NotificationType.BOOKING_CANCELLED,
+            "상담 예약이 취소되었습니다",
+            f"{notification.fmt_dt(booking.slot.start_at)} 상담 예약이 취소되었습니다."
+            + (f"\n사유: {reason}" if reason else ""),
+            booking_id=booking.id,
+            sms_to=booking.contact_phone,
+        )
     db.flush()
     # 빈자리가 생겼으므로 대기자에게 즉시 제안
     waitlist.offer_slot(db, booking.slot)
@@ -277,9 +297,10 @@ def reschedule_booking(
         concern_tags=booking.concern_tags,
         waitlist_entry=waitlist_entry,
         exclude_booking_id=booking.id,
+        rescheduled_from=booking.slot.start_at,
         commit=False,
     )
-    cancel_booking(db, booking, user, reason="일정 변경", commit=False)
+    cancel_booking(db, booking, user, reason="일정 변경", commit=False, notify=False)
     if commit:
         db.commit()
     return new_booking
@@ -324,6 +345,7 @@ def confirm_attendance(db: Session, booking: Booking, user: User) -> Booking:
     if booking.status != BookingStatus.CONFIRMED:
         raise AppError(400, "INVALID_STATE", "진행 예정인 예약이 아닙니다.")
     booking.attendance_confirmed_at = booking.attendance_confirmed_at or now()
+    booking.attendance_declined_at = None
     db.commit()
     return booking
 

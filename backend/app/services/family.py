@@ -20,7 +20,7 @@ from ..db import now
 from ..errors import AppError, not_found
 from ..models import Booking, Relation, Subject, TestResult, User
 from . import notification
-from .phone import normalize, same_phone
+from .phone import normalize, record_sms_send, same_phone
 
 log = logging.getLogger("allostar.family")
 
@@ -46,6 +46,7 @@ def own_subject(db: Session, user: User, subject_id: int) -> Subject:
 
 
 def _send_code(db: Session, owner: User, s: Subject) -> str:
+    record_sms_send(db, s.phone, "FAMILY")
     code = f"{secrets.randbelow(1_000_000):06d}"
     s.verify_code_hash = _hash(s.id, code)
     s.verify_expires_at = now() + timedelta(minutes=settings.family_code_minutes)

@@ -35,6 +35,9 @@ if ($Seed -or -not (Test-Path (Join-Path $be 'allostar.db'))) {
     Push-Location $be; & $py -m app.seed; Pop-Location
 }
 
+# 시연용 실행이므로 데모 모드(데모 계정 바로 입장·인증번호 화면 표시)를 켠다. 코드 기본값은 꺼짐.
+if (-not $env:DEMO_MODE) { $env:DEMO_MODE = 'true' }
+
 Step '백엔드 시작  http://localhost:8000/docs'
 $backend = Start-Process -FilePath $py -WorkingDirectory $be -NoNewWindow -PassThru `
     -ArgumentList '-m', 'uvicorn', 'app.main:app', '--reload', '--port', '8000'

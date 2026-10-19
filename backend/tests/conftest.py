@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["SCHEDULER_INTERVAL_SECONDS"] = "0"
+os.environ["DEMO_MODE"] = "true"  # 기본값은 꺼짐. 테스트는 인증번호를 응답으로 받기 위해 켠다
 os.environ["FAMILY_CODE_RESEND_SECONDS"] = "0"  # 테스트에서는 재발송 간격 제한 없음
 
 import pytest  # noqa: E402

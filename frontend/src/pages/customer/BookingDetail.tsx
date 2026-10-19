@@ -33,6 +33,13 @@ export function BookingDetail() {
       )}
       <ErrorBox error={act.error} />
 
+      {b.status === 'CONFIRMED' && b.attendance_declined_at && (
+        <div className="alert alert-warn">
+          <div>
+            <strong>상담 전화를 받으실 분이 이 시간에 통화가 어렵다고 응답했어요.</strong> 아래에서 일정을 변경해주세요.
+          </div>
+        </div>
+      )}
       {b.status === 'CONFIRMED' && (
         <Card className={b.attendance_confirmed_at ? '' : 'card-attn'}>
           {b.attendance_confirmed_at ? (

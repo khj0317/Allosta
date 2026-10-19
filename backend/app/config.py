@@ -20,7 +20,8 @@ class Settings:
     frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
     integration_api_key: str = os.getenv("INTEGRATION_API_KEY", "dev-integration-key")
     # 데모 모드: 데모 계정 바로 입장(비밀번호 없이)과 데모 키트 코드 안내를 켠다. 운영 배포 시 false.
-    demo_mode: bool = os.getenv("DEMO_MODE", "true").lower() in ("1", "true", "yes")
+    # 기본은 꺼짐(안전한 기본값). 실행 스크립트(dev.cmd/dev.sh)와 docker-compose에서만 켠다.
+    demo_mode: bool = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 
     # 상담 1회 길이(분). 슬롯 생성의 기본 단위.
     slot_minutes: int = _env_int("SLOT_MINUTES", 30)
@@ -42,6 +43,8 @@ class Settings:
     family_code_minutes: int = _env_int("FAMILY_CODE_MINUTES", 10)
     family_code_max_attempts: int = _env_int("FAMILY_CODE_MAX_ATTEMPTS", 5)
     family_code_resend_seconds: int = _env_int("FAMILY_CODE_RESEND_SECONDS", 30)
+    # 인증번호 문자: 번호당 하루 최대 발송 횟수(가입·가족 인증 합산)
+    sms_daily_limit_per_phone: int = _env_int("SMS_DAILY_LIMIT_PER_PHONE", 5)
     # 계정당 등록 가능한 가족 수(본인 제외)
     max_family_members: int = _env_int("MAX_FAMILY_MEMBERS", 10)
     # 로그인 연속 실패 잠금: N회 실패 시 M분 잠금

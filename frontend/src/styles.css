@@ -393,3 +393,13 @@ label > .hint { margin-top: -2px; }
 .input-row > .btn { flex: none; }
 .text-ok { color: var(--ok); font-weight: 600; }
 .dim-row td { opacity: 0.5; }
+
+/* ---------- 문자 링크 참석 응답(로그인 없음) */
+.attend { min-height: 100vh; display: flex; justify-content: center; padding: 48px 16px; background: var(--bg); }
+.attend-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px 24px; align-self: flex-start; }
+.attend-card .brand { margin-bottom: 28px; }
+.attend-card h1 { font-size: 26px; }
+.attend-card .sub { margin-bottom: 20px; }
+.attend-q { font-weight: 700; font-size: 16px; margin: 4px 0 4px; }
+.attend-actions { display: flex; flex-direction: column; gap: 0; margin-bottom: 12px; }
+.attend-actions .btn-block { margin-top: 10px; }

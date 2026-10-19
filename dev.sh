@@ -34,6 +34,9 @@ if [ "${1:-}" = "--seed" ] || [ ! -f "$BE/allostar.db" ]; then
   (cd "$BE" && "$PY" -m app.seed)
 fi
 
+# 시연용 실행이므로 데모 모드(데모 계정 바로 입장·인증번호 화면 표시)를 켠다. 코드 기본값은 꺼짐.
+export DEMO_MODE="${DEMO_MODE:-true}"
+
 step '백엔드 시작  http://localhost:8000/docs'
 (cd "$BE" && exec "$PY" -m uvicorn app.main:app --reload --port 8000) &
 BACKEND_PID=$!

@@ -12,6 +12,7 @@ import { MyBookings } from './pages/customer/MyBookings';
 import { MyResults } from './pages/customer/MyResults';
 import { Notifications } from './pages/customer/Notifications';
 import { ResultView } from './pages/customer/ResultView';
+import { Attendance } from './pages/Attendance';
 import { ChangePassword } from './pages/ChangePassword';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
@@ -45,6 +46,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/password" element={<ChangePassword />} />
+          {/* 문자 링크: 로그인 없이 참석 응답 */}
+          <Route path="/c/:token" element={<Attendance />} />
           <Route path="/" element={<Home />} />
           <Route element={<Layout />}>
             <Route path="/my" element={<Guard roles={['CUSTOMER']}><MyResults /></Guard>} />
