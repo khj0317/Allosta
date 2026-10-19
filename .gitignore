@@ -10,3 +10,4 @@ backend/*.db-*
 node_modules/
 frontend/dist/
 *.tsbuildinfo
+.dev-logs/

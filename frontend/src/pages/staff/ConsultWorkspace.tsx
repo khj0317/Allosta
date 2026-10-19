@@ -82,7 +82,7 @@ export function ConsultWorkspace() {
   const submitted = d.record?.status === 'SUBMITTED';
   // 제출(고객 공유)된 기록은 정해진 기간까지만, 사유를 남기고 고칠 수 있다
   const locked = submitted && !!d.record_editable_until && parseLocal(d.record_editable_until) < new Date();
-  const editable = isCounselor && (b.status === 'CONFIRMED' || b.status === 'COMPLETED') && !locked;
+  const editable = isCounselor && (b.status === 'CONFIRMED' || b.status === 'COMPLETED') && !locked && !b.customer_withdrawn;
   const set = <K extends keyof RecordInput>(k: K, v: RecordInput[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const productName = (pid: number) => products.find((p) => p.id === pid)?.name ?? pid;
@@ -100,10 +100,10 @@ export function ConsultWorkspace() {
           </h1>
           <p className="sub">
             {fmtDateTime(b.start_at)} · {b.counselor_name} 상담사 · 통화 번호 <strong>{b.contact_phone}</strong>
-            {b.contact_phone !== d.customer_phone && <> (계정 번호 {d.customer_phone})</>}
+            {!b.customer_withdrawn && b.contact_phone !== d.customer_phone && <> (계정 번호 {d.customer_phone})</>}
           </p>
         </div>
-        {b.status === 'CONFIRMED' && (
+        {b.status === 'CONFIRMED' && !b.customer_withdrawn && (
           <div className="row">
             {b.attendance_declined_at ? (
               <Badge tone="danger">통화 어려움 응답</Badge>
@@ -139,6 +139,13 @@ export function ConsultWorkspace() {
           </div>
         )}
       </div>
+      {b.customer_withdrawn && (
+        <div className="alert alert-warn">
+          <div>
+            <strong>탈퇴한 고객입니다.</strong> 이름·연락처와 검사 수치, 상담 기록 내용이 삭제되어 더 처리하거나 기록할 수 없습니다.
+          </div>
+        </div>
+      )}
       <ErrorBox error={act.error} />
 
       <div className="workspace">

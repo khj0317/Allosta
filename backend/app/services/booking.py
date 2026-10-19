@@ -226,6 +226,12 @@ def _assert_changeable_by_customer(booking: Booking):
         )
 
 
+def assert_customer_active(booking: Booking) -> None:
+    """탈퇴한 고객의 상담은 더 처리·기록하지 않는다(지운 건강정보가 기록으로 다시 쌓이거나 알림이 나가지 않도록)."""
+    if booking.customer.withdrawn_at is not None:
+        raise AppError(409, "CUSTOMER_WITHDRAWN", "탈퇴한 고객의 상담은 처리하거나 기록할 수 없습니다.")
+
+
 def issue_attendance_token(booking: Booking) -> str:
     """문자 링크용 토큰 발급. 원문은 문자에만 담고 DB에는 해시만 남긴다."""
     token = secrets.token_urlsafe(16)

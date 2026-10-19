@@ -130,6 +130,12 @@ def withdraw(db: Session, user: User, password: str) -> None:
         booking_service.cancel_booking(db, b, user, reason="회원 탈퇴", commit=False, notify=False)
     for slot in freed:
         waitlist_service.offer_slot(db, slot)
+    # 시간이 지났는데 처리되지 않은 상담: 탈퇴 후에는 처리할 수 없어 '처리 누락'에 영원히 남으므로 탈퇴로 종료한다
+    for b in db.scalars(
+        select(Booking).join(Slot, Slot.id == Booking.slot_id)
+        .where(Booking.customer_id == user.id, Booking.status == BookingStatus.CONFIRMED, Slot.end_at <= now())
+    ):
+        b.status, b.cancelled_at, b.cancel_reason = BookingStatus.CANCELLED, now(), "회원 탈퇴"
 
     # 2) 건강정보·개인정보 삭제
     subjects = db.scalars(select(Subject).where(Subject.owner_id == user.id)).all()

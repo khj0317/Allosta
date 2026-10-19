@@ -40,12 +40,14 @@ def _scope_counselor_id(user: User, requested: int | None) -> int | None:
     return requested
 
 
-def _staff_booking(db, user: User, booking_id: int) -> Booking:
+def _staff_booking(db, user: User, booking_id: int, write: bool = False) -> Booking:
     b = db.get(Booking, booking_id)
     if b is None:
         raise not_found("예약")
     if user.role == Role.COUNSELOR and b.counselor_id != user.counselor.id:
         raise forbidden("본인에게 배정된 상담만 접근할 수 있습니다.")
+    if write:
+        booking_svc.assert_customer_active(b)
     return b
 
 
@@ -108,7 +110,7 @@ def booking_detail(booking_id: int, user: StaffUser, db: DbSession):
     return CounselorBookingDetail(
         booking=booking_out(b),
         result=result_detail(b.result),
-        customer_phone=b.customer.phone,
+        customer_phone="" if b.customer.withdrawn_at else b.customer.phone,
         past_bookings=[booking_out(p) for p in past],
         record=RecordOut.model_validate(b.record) if b.record else None,
         record_editable_until=record_svc.editable_until(b.record) if b.record else None,
@@ -124,19 +126,19 @@ def booking_detail(booking_id: int, user: StaffUser, db: DbSession):
 
 @router.post("/bookings/{booking_id}/call-attempt", response_model=BookingOut)
 def call_attempt(booking_id: int, user: StaffUser, db: DbSession):
-    return booking_out(booking_svc.record_call_attempt(db, _staff_booking(db, user, booking_id)))
+    return booking_out(booking_svc.record_call_attempt(db, _staff_booking(db, user, booking_id, write=True)))
 
 
 @router.post("/bookings/{booking_id}/no-show", response_model=BookingOut)
 def no_show(booking_id: int, user: StaffUser, db: DbSession):
-    return booking_out(booking_svc.mark_no_show(db, _staff_booking(db, user, booking_id)))
+    return booking_out(booking_svc.mark_no_show(db, _staff_booking(db, user, booking_id, write=True)))
 
 
 @router.post("/bookings/{booking_id}/cancel", response_model=BookingOut)
 def staff_cancel(booking_id: int, body: CancelIn, user: StaffUser, db: DbSession):
     if not body.reason.strip():
         raise AppError(400, "REASON_REQUIRED", "운영자 취소 시 사유는 필수입니다(고객에게 안내됨).")
-    return booking_out(booking_svc.cancel_booking(db, _staff_booking(db, user, booking_id), user, body.reason))
+    return booking_out(booking_svc.cancel_booking(db, _staff_booking(db, user, booking_id, write=True), user, body.reason))
 
 
 # ---------------------------------------------------------------- 상담 기록 (상담사 본인만)

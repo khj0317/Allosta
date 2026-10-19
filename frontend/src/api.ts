@@ -99,6 +99,8 @@ export interface Booking {
   created_at: string;
   record_status: 'DRAFT' | 'SUBMITTED' | null;
   can_change: boolean;
+  /** 탈퇴한 고객: 이름·연락처는 지워졌고 더 처리·기록할 수 없다 */
+  customer_withdrawn: boolean;
 }
 
 export interface WaitlistEntry {

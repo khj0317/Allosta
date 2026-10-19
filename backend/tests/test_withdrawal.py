@@ -136,3 +136,23 @@ def test_withdrawn_kit_cannot_be_claimed_by_someone_else(client, f, db):
     res = client.post(f"/api/subjects/{os_.id}/claim-kit", json={"kit_code": r.kit_code}, headers=auth(other))
     assert res.json()["detail"]["code"] == "KIT_CLAIM_FAILED"
     assert db.get(TestResult, r.id).subject_id == s.id
+
+
+def test_staff_cannot_process_or_record_withdrawn_customers_consultation(client, f, db):
+    """탈퇴 뒤 상담사가 기록을 써서 지운 건강정보가 다시 쌓이거나 탈퇴 고객에게 알림이 나가면 안 된다."""
+    c = f.counselor()
+    u, s, r = f.customer_with_result()
+    unprocessed = _booking(db, c, u, s, r, now() - timedelta(hours=2))  # 시간이 지났는데 처리 안 된 상담
+    done = _booking(db, c, u, s, r, now() - timedelta(days=1), status=BookingStatus.COMPLETED, completed_at=now())
+    _withdraw(client, u)
+    db.expire_all()
+    h = auth(c.user)
+
+    assert db.get(Booking, unprocessed.id).status == BookingStatus.CANCELLED  # 처리 누락에 남지 않음
+    assert client.get("/api/staff/bookings/overdue", headers=h).json() == []
+    detail = client.get(f"/api/staff/bookings/{done.id}", headers=h).json()
+    assert detail["customer_phone"] == "" and detail["booking"]["customer_withdrawn"] is True
+    res = client.put(f"/api/staff/bookings/{done.id}/record", headers=h, json={"concern_tags": ["혈당·당대사"], "summary": "x"})
+    assert res.json()["detail"]["code"] == "CUSTOMER_WITHDRAWN"
+    assert client.post(f"/api/staff/bookings/{done.id}/call-attempt", headers=h).json()["detail"]["code"] == "CUSTOMER_WITHDRAWN"
+    assert db.query(Notification).count() == 0

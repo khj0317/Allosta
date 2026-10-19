@@ -307,6 +307,8 @@ class BookingOut(BaseModel):
     created_at: datetime
     record_status: RecordStatus | None = None
     can_change: bool = False
+    # 탈퇴한 고객: 이름·연락처는 지워졌고 더 처리·기록할 수 없다
+    customer_withdrawn: bool = False
 
     @classmethod
     def from_booking(cls, b: Booking, can_change: bool = False) -> "BookingOut":
@@ -335,6 +337,7 @@ class BookingOut(BaseModel):
             created_at=b.created_at,
             record_status=b.record.status if b.record else None,
             can_change=can_change,
+            customer_withdrawn=b.customer.withdrawn_at is not None,
         )
 
 

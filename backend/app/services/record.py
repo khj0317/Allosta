@@ -51,6 +51,7 @@ def snapshot(r: ConsultationRecord) -> dict:
 
 def editable_until(r: ConsultationRecord):
     return r.submitted_at + timedelta(days=settings.record_edit_days) if r.submitted_at else None
+from . import booking as booking_service
 from . import notification
 
 
@@ -58,6 +59,7 @@ def get_booking_for_counselor(db: Session, booking_id: int, counselor: Counselor
     booking = db.get(Booking, booking_id)
     if booking is None or booking.counselor_id != counselor.id:
         raise forbidden("본인에게 배정된 상담만 접근할 수 있습니다.")
+    booking_service.assert_customer_active(booking)
     return booking
 
 
