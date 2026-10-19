@@ -244,6 +244,17 @@ export interface FamilyInput {
   phone: string;
 }
 
+export interface WithdrawalPreview {
+  upcoming_bookings: number;
+  /** 곧 시작하거나 진행 중이라 탈퇴를 막는 상담 */
+  imminent_bookings: { id: number; start_at: string; counselor_name: string }[];
+  active_waitlists: number;
+  family_members: number;
+  results: number;
+  orders_kept: number;
+  blocked_reason: string | null;
+}
+
 export interface DemoHints {
   reset: { email: string; phone: string } | null;
   family: FamilyInput;
@@ -402,6 +413,8 @@ export const api = {
     request<{ kit_code: string; service_label: string; registered: boolean }[]>('GET', `/api/demo/kits?subject_id=${subjectId}`),
   meta: () => request<Meta>('GET', '/api/meta'),
   demoHints: () => request<DemoHints>('GET', '/api/demo/hints'),
+  withdrawalPreview: () => request<WithdrawalPreview>('GET', '/api/me/withdrawal'),
+  withdraw: (password: string) => request<null>('POST', '/api/me/withdrawal', { password }),
   products: () => request<Product[]>('GET', '/api/products'),
   counselors: () => request<CounselorInfo[]>('GET', '/api/counselors'),
 

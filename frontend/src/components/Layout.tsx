@@ -70,7 +70,13 @@ export function Layout() {
             ))}
           </nav>
           <div className="who">
-            <span className="who-name">{user.name}</span>
+            {user.role === 'CUSTOMER' ? (
+              <NavLink to="/my/account" className="who-name who-link" title="내 정보">
+                {user.name}
+              </NavLink>
+            ) : (
+              <span className="who-name">{user.name}</span>
+            )}
             <span className="who-role">{ROLE_LABEL[user.role]}</span>
             <button
               className="link-btn"

@@ -136,6 +136,8 @@ class User(Base):
     # 로그인 연속 실패 잠금
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 회원 탈퇴 시각. 개인정보는 지워지고 행만 익명으로 남는다(예약·주문 통계와 법정 보존 기록의 외래키 때문).
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     counselor: Mapped["Counselor | None"] = relationship(back_populates="user", uselist=False)

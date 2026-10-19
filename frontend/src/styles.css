@@ -120,6 +120,13 @@ p { margin: 0 0 8px; }
 .nav-link.active { color: var(--ink); font-weight: 700; border-bottom-color: var(--ink); }
 .who { display: flex; align-items: center; gap: 14px; white-space: nowrap; font-size: 14px; }
 .who-name { font-weight: 600; }
+.who-link { color: inherit; text-decoration: none; }
+.who-link:hover, .who-link.active { text-decoration: underline; text-underline-offset: 3px; }
+.withdraw-impact { margin: 0 0 16px; padding-left: 18px; font-size: 14px; line-height: 1.8; }
+.withdraw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.withdraw-grid > div { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px; }
+.withdraw-grid p { margin: 6px 0 0; color: var(--ink-2); line-height: 1.6; }
+@media (max-width: 640px) { .withdraw-grid { grid-template-columns: 1fr; } }
 .who-role { color: var(--muted); font-size: 13px; }
 .page { max-width: 1200px; margin: 0 auto; padding: 44px 24px 96px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 32px; flex-wrap: wrap; }

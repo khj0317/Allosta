@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Role, type User } from '../api';
 import { homeFor, useAuth } from '../auth';
 import { ErrorBox, useAction, useAsync } from '../components/ui';
@@ -86,6 +86,7 @@ export function Login() {
   const [password, setPassword] = useState('');
   const { data: meta } = useAsync(api.meta);
   const act = useAction();
+  const notice = (useLocation().state as { notice?: string } | null)?.notice;
   if (user) return <Navigate to={homeFor(user)} replace />;
 
   const enter = (p: Promise<User>) => act.run(() => p).then((u) => nav(homeFor(u)));
@@ -115,6 +116,11 @@ export function Login() {
         )
       }
     >
+      {notice && (
+        <div className="alert alert-ok">
+          <div>{notice}</div>
+        </div>
+      )}
       <form
         className="form"
         onSubmit={(e) => {

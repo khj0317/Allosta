@@ -6,6 +6,7 @@ import { AuthProvider, homeFor, useAuth } from './auth';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/ui';
 import { Dashboard } from './pages/admin/Dashboard';
+import { Account } from './pages/customer/Account';
 import { BookConsultation } from './pages/customer/BookConsultation';
 import { BookingDetail } from './pages/customer/BookingDetail';
 import { MyBookings } from './pages/customer/MyBookings';
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/my/book" element={<Guard roles={['CUSTOMER']}><BookConsultation /></Guard>} />
             <Route path="/my/bookings" element={<Guard roles={['CUSTOMER']}><MyBookings /></Guard>} />
             <Route path="/my/bookings/:id" element={<Guard roles={['CUSTOMER']}><BookingDetail /></Guard>} />
+            <Route path="/my/account" element={<Guard roles={['CUSTOMER']}><Account /></Guard>} />
             <Route path="/my/notifications" element={<Guard roles={['CUSTOMER']}><Notifications /></Guard>} />
 
             <Route path="/staff" element={<Guard roles={['COUNSELOR']}><StaffSchedule /></Guard>} />
